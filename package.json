@@ -1,0 +1,19 @@
+{
+  "name": "azure-sre-agent-ode-demo-kit",
+  "version": "1.0.0",
+  "description": "Azure SRE Agent ODE Reduction demo kit — Contoso Retail on AKS",
+  "private": true,
+  "scripts": {
+    "dev:api": "cd src/api && npm run dev",
+    "dev:web": "cd src/web && npm run dev",
+    "build:api": "cd src/api && npm run build",
+    "build:web": "cd src/web && npm run build",
+    "build:classifier": "cd src/classifier && npm run build",
+    "test:api": "cd src/api && npm test",
+    "test:classifier": "cd src/classifier && npm test",
+    "test:web": "cd src/web && npm test",
+    "lint:api": "cd src/api && npm run lint",
+    "seed:cosmos": "cd src/api && npx ts-node src/data/seed.ts cosmos",
+    "seed:sql": "cd src/api && npx ts-node src/data/seed.ts sql"
+  }
+}
