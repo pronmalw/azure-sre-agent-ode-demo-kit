@@ -1,0 +1,38 @@
+{
+  "scenarioId": "missing-indexing-policy",
+  "name": "Missing indexing policy",
+  "description": "Reads routed to unindexed container.",
+  "chaosState": {
+    "hotPartition": false,
+    "metadataThrottling": false,
+    "multipleClients": false,
+    "highCpu": false,
+    "crossPartitionQuery": false,
+    "largeDocument": false,
+    "missingIndexing": true,
+    "pointReadMisuse": false,
+    "sqlSlowQuery": false,
+    "sqlConnectionPressure": false
+  },
+  "telemetry": {
+    "latencyP50Ms": 260,
+    "latencyP99Ms": 1250,
+    "cosmos429Count": 9,
+    "ruUsage": 880,
+    "serverSideLatencyMs": 18,
+    "hostCpuPercent": 26,
+    "checkoutSuccessRate": 0.97,
+    "recentDeploymentEvent": false,
+    "activeToggles": [
+      "missingIndexing"
+    ],
+    "sqlQueryLatencyMs": 50,
+    "sqlErrorCount": 0,
+    "timestamp": "2025-01-01T00:00:00.000Z"
+  },
+  "expectedClassification": {
+    "primary": "DATABASE_CONFIG_OR_DATA_MODEL",
+    "secondaryIncludes": [],
+    "confidence": "HIGH"
+  }
+}

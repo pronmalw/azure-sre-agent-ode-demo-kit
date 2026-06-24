@@ -1,0 +1,9 @@
+// Cosmos DB 429 timeline
+// Contoso Retail — Azure SRE Agent Demo
+// Usage: Paste into Log Analytics or Application Insights Logs
+
+dependencies
+| where target has 'documents.azure.com'
+| where resultCode == '429'
+| summarize count() by bin(timestamp, 1m)
+| order by timestamp asc

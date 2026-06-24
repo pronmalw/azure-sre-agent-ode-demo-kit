@@ -1,0 +1,36 @@
+{
+  "scenarioId": "healthy-baseline",
+  "name": "Healthy baseline",
+  "description": "All chaos toggles off and healthy application metrics.",
+  "chaosState": {
+    "hotPartition": false,
+    "metadataThrottling": false,
+    "multipleClients": false,
+    "highCpu": false,
+    "crossPartitionQuery": false,
+    "largeDocument": false,
+    "missingIndexing": false,
+    "pointReadMisuse": false,
+    "sqlSlowQuery": false,
+    "sqlConnectionPressure": false
+  },
+  "telemetry": {
+    "latencyP50Ms": 28,
+    "latencyP99Ms": 95,
+    "cosmos429Count": 0,
+    "ruUsage": 40,
+    "serverSideLatencyMs": 12,
+    "hostCpuPercent": 18,
+    "checkoutSuccessRate": 1,
+    "recentDeploymentEvent": false,
+    "activeToggles": [],
+    "sqlQueryLatencyMs": 32,
+    "sqlErrorCount": 0,
+    "timestamp": "2025-01-01T00:00:00.000Z"
+  },
+  "expectedClassification": {
+    "primary": "INSUFFICIENT_EVIDENCE",
+    "secondaryIncludes": [],
+    "confidence": "LOW"
+  }
+}

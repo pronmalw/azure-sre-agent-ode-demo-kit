@@ -1,0 +1,7 @@
+Write-Host '1. Open the web app home page.'
+Write-Host '2. Navigate to /ops and show healthy metrics.'
+Write-Host '3. Explain Cosmos DB vs Azure SQL data placement.'
+Write-Host '4. Trigger the full mixed incident and start load.'
+Write-Host '5. Open /sre-agent and run investigation.'
+Write-Host '6. Review ownership, evidence, safe actions, and do-not-do guidance.'
+Write-Host '7. Reset to healthy and run recovery verification.'

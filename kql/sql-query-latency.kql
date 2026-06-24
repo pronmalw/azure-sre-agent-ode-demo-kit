@@ -1,0 +1,8 @@
+// SQL query latency
+// Contoso Retail — Azure SRE Agent Demo
+// Usage: Paste into Log Analytics or Application Insights Logs
+
+dependencies
+| where type == 'SQL'
+| summarize avgDuration=avg(duration), p95=percentile(duration,95), p99=percentile(duration,99) by name
+| order by avgDuration desc

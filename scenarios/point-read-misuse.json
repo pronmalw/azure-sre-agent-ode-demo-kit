@@ -1,0 +1,38 @@
+{
+  "scenarioId": "point-read-misuse",
+  "name": "Point read misuse",
+  "description": "Query used where point read should be used.",
+  "chaosState": {
+    "hotPartition": false,
+    "metadataThrottling": false,
+    "multipleClients": false,
+    "highCpu": false,
+    "crossPartitionQuery": false,
+    "largeDocument": false,
+    "missingIndexing": false,
+    "pointReadMisuse": true,
+    "sqlSlowQuery": false,
+    "sqlConnectionPressure": false
+  },
+  "telemetry": {
+    "latencyP50Ms": 210,
+    "latencyP99Ms": 1080,
+    "cosmos429Count": 6,
+    "ruUsage": 610,
+    "serverSideLatencyMs": 17,
+    "hostCpuPercent": 23,
+    "checkoutSuccessRate": 0.98,
+    "recentDeploymentEvent": false,
+    "activeToggles": [
+      "pointReadMisuse"
+    ],
+    "sqlQueryLatencyMs": 44,
+    "sqlErrorCount": 0,
+    "timestamp": "2025-01-01T00:00:00.000Z"
+  },
+  "expectedClassification": {
+    "primary": "DATABASE_CONFIG_OR_DATA_MODEL",
+    "secondaryIncludes": [],
+    "confidence": "HIGH"
+  }
+}

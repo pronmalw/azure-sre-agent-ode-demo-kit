@@ -1,0 +1,15 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "workloadName": { "value": "sre-agent-ode-demo" },
+    "environmentName": { "value": "dev" },
+    "location": { "value": "westeurope" },
+    "customerName": { "value": "Contoso Retail" },
+    "hostingMode": { "value": "aks" },
+    "aksNodeCount": { "value": 2 },
+    "aksVmSize": { "value": "Standard_D2s_v3" },
+    "aksClusterName": { "value": "aks-contoso-sreagent-demo" },
+    "enableContainerInsights": { "value": true }
+  }
+}

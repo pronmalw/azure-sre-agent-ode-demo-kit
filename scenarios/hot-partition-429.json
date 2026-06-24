@@ -1,0 +1,38 @@
+{
+  "scenarioId": "hot-partition-429",
+  "name": "Hot partition 429",
+  "description": "Only hot partition enabled.",
+  "chaosState": {
+    "hotPartition": true,
+    "metadataThrottling": false,
+    "multipleClients": false,
+    "highCpu": false,
+    "crossPartitionQuery": false,
+    "largeDocument": false,
+    "missingIndexing": false,
+    "pointReadMisuse": false,
+    "sqlSlowQuery": false,
+    "sqlConnectionPressure": false
+  },
+  "telemetry": {
+    "latencyP50Ms": 200,
+    "latencyP99Ms": 1400,
+    "cosmos429Count": 25,
+    "ruUsage": 780,
+    "serverSideLatencyMs": 18,
+    "hostCpuPercent": 22,
+    "checkoutSuccessRate": 0.91,
+    "recentDeploymentEvent": false,
+    "activeToggles": [
+      "hotPartition"
+    ],
+    "sqlQueryLatencyMs": 45,
+    "sqlErrorCount": 0,
+    "timestamp": "2025-01-01T00:00:00.000Z"
+  },
+  "expectedClassification": {
+    "primary": "APPLICATION_OR_CLIENT_SIDE",
+    "secondaryIncludes": [],
+    "confidence": "HIGH"
+  }
+}

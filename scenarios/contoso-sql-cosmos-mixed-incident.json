@@ -1,0 +1,52 @@
+{
+  "scenarioId": "contoso-sql-cosmos-mixed-incident",
+  "name": "Contoso mixed incident",
+  "description": "All chaos toggles enabled to create a blended client, data model, host, and SQL issue.",
+  "chaosState": {
+    "hotPartition": true,
+    "metadataThrottling": true,
+    "multipleClients": true,
+    "highCpu": true,
+    "crossPartitionQuery": true,
+    "largeDocument": true,
+    "missingIndexing": true,
+    "pointReadMisuse": true,
+    "sqlSlowQuery": true,
+    "sqlConnectionPressure": true
+  },
+  "telemetry": {
+    "latencyP50Ms": 620,
+    "latencyP99Ms": 3200,
+    "cosmos429Count": 55,
+    "ruUsage": 1600,
+    "serverSideLatencyMs": 20,
+    "hostCpuPercent": 85,
+    "checkoutSuccessRate": 0.62,
+    "recentDeploymentEvent": true,
+    "activeToggles": [
+      "hotPartition",
+      "metadataThrottling",
+      "multipleClients",
+      "highCpu",
+      "crossPartitionQuery",
+      "largeDocument",
+      "missingIndexing",
+      "pointReadMisuse",
+      "sqlSlowQuery",
+      "sqlConnectionPressure"
+    ],
+    "sqlQueryLatencyMs": 3200,
+    "sqlErrorCount": 8,
+    "timestamp": "2025-01-01T00:00:00.000Z"
+  },
+  "expectedClassification": {
+    "primary": "APPLICATION_OR_CLIENT_SIDE",
+    "secondaryIncludes": [
+      "HOST_OR_RUNTIME",
+      "DATABASE_CONFIG_OR_DATA_MODEL",
+      "RECENT_CHANGE_OR_DEPLOYMENT",
+      "SQL_DATABASE_OR_SCHEMA"
+    ],
+    "confidence": "HIGH"
+  }
+}

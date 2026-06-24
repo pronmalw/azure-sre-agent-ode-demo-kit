@@ -1,0 +1,7 @@
+// Application latency timeline
+// Contoso Retail — Azure SRE Agent Demo
+// Usage: Paste into Log Analytics or Application Insights Logs
+
+requests
+| summarize p50=percentile(duration, 50), p95=percentile(duration, 95), p99=percentile(duration, 99) by bin(timestamp, 1m)
+| order by timestamp asc

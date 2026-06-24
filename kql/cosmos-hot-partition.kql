@@ -1,0 +1,8 @@
+// Hot partition detection
+// Contoso Retail — Azure SRE Agent Demo
+// Usage: Paste into Log Analytics or Application Insights Logs
+
+traces
+| where customDimensions['partitionKey'] != ''
+| summarize count() by tostring(customDimensions['partitionKey'])
+| top 10 by count_ desc

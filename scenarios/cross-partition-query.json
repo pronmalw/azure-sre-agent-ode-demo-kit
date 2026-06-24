@@ -1,0 +1,38 @@
+{
+  "scenarioId": "cross-partition-query",
+  "name": "Cross partition query",
+  "description": "Cross partition fan-out query active.",
+  "chaosState": {
+    "hotPartition": false,
+    "metadataThrottling": false,
+    "multipleClients": false,
+    "highCpu": false,
+    "crossPartitionQuery": true,
+    "largeDocument": false,
+    "missingIndexing": false,
+    "pointReadMisuse": false,
+    "sqlSlowQuery": false,
+    "sqlConnectionPressure": false
+  },
+  "telemetry": {
+    "latencyP50Ms": 240,
+    "latencyP99Ms": 980,
+    "cosmos429Count": 8,
+    "ruUsage": 720,
+    "serverSideLatencyMs": 18,
+    "hostCpuPercent": 25,
+    "checkoutSuccessRate": 0.96,
+    "recentDeploymentEvent": false,
+    "activeToggles": [
+      "crossPartitionQuery"
+    ],
+    "sqlQueryLatencyMs": 48,
+    "sqlErrorCount": 0,
+    "timestamp": "2025-01-01T00:00:00.000Z"
+  },
+  "expectedClassification": {
+    "primary": "DATABASE_CONFIG_OR_DATA_MODEL",
+    "secondaryIncludes": [],
+    "confidence": "HIGH"
+  }
+}

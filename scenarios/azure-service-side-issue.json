@@ -1,0 +1,36 @@
+{
+  "scenarioId": "azure-service-side-issue",
+  "name": "Azure service-side issue",
+  "description": "No chaos toggles, but service-side latency spikes.",
+  "chaosState": {
+    "hotPartition": false,
+    "metadataThrottling": false,
+    "multipleClients": false,
+    "highCpu": false,
+    "crossPartitionQuery": false,
+    "largeDocument": false,
+    "missingIndexing": false,
+    "pointReadMisuse": false,
+    "sqlSlowQuery": false,
+    "sqlConnectionPressure": false
+  },
+  "telemetry": {
+    "latencyP50Ms": 700,
+    "latencyP99Ms": 2800,
+    "cosmos429Count": 50,
+    "ruUsage": 450,
+    "serverSideLatencyMs": 650,
+    "hostCpuPercent": 22,
+    "checkoutSuccessRate": 0.93,
+    "recentDeploymentEvent": false,
+    "activeToggles": [],
+    "sqlQueryLatencyMs": 80,
+    "sqlErrorCount": 0,
+    "timestamp": "2025-01-01T00:00:00.000Z"
+  },
+  "expectedClassification": {
+    "primary": "AZURE_SERVICE_SIDE",
+    "secondaryIncludes": [],
+    "confidence": "MEDIUM"
+  }
+}

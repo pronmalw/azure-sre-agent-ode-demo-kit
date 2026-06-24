@@ -1,0 +1,9 @@
+// SQL errors and timeouts
+// Contoso Retail — Azure SRE Agent Demo
+// Usage: Paste into Log Analytics or Application Insights Logs
+
+dependencies
+| where type == 'SQL'
+| where success == false or duration > 1000
+| project timestamp, name, duration, resultCode, target
+| order by timestamp desc

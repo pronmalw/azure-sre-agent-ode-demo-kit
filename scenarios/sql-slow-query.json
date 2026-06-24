@@ -1,0 +1,38 @@
+{
+  "scenarioId": "sql-slow-query",
+  "name": "SQL slow query",
+  "description": "Artificial SQL slowness injected.",
+  "chaosState": {
+    "hotPartition": false,
+    "metadataThrottling": false,
+    "multipleClients": false,
+    "highCpu": false,
+    "crossPartitionQuery": false,
+    "largeDocument": false,
+    "missingIndexing": false,
+    "pointReadMisuse": false,
+    "sqlSlowQuery": true,
+    "sqlConnectionPressure": false
+  },
+  "telemetry": {
+    "latencyP50Ms": 300,
+    "latencyP99Ms": 1800,
+    "cosmos429Count": 0,
+    "ruUsage": 70,
+    "serverSideLatencyMs": 12,
+    "hostCpuPercent": 20,
+    "checkoutSuccessRate": 0.9,
+    "recentDeploymentEvent": false,
+    "activeToggles": [
+      "sqlSlowQuery"
+    ],
+    "sqlQueryLatencyMs": 3200,
+    "sqlErrorCount": 3,
+    "timestamp": "2025-01-01T00:00:00.000Z"
+  },
+  "expectedClassification": {
+    "primary": "SQL_DATABASE_OR_SCHEMA",
+    "secondaryIncludes": [],
+    "confidence": "HIGH"
+  }
+}

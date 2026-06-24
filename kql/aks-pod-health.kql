@@ -1,0 +1,7 @@
+// AKS pod health
+// Contoso Retail — Azure SRE Agent Demo
+// Usage: Paste into Log Analytics or Application Insights Logs
+
+KubePodInventory
+| summarize restarts=sum(ContainerRestartCount) by Name, Namespace, bin(TimeGenerated, 5m)
+| order by TimeGenerated desc

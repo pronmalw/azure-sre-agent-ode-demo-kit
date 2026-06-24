@@ -1,0 +1,36 @@
+{
+  "scenarioId": "insufficient-evidence",
+  "name": "Insufficient evidence",
+  "description": "Healthy metrics without a strong signal.",
+  "chaosState": {
+    "hotPartition": false,
+    "metadataThrottling": false,
+    "multipleClients": false,
+    "highCpu": false,
+    "crossPartitionQuery": false,
+    "largeDocument": false,
+    "missingIndexing": false,
+    "pointReadMisuse": false,
+    "sqlSlowQuery": false,
+    "sqlConnectionPressure": false
+  },
+  "telemetry": {
+    "latencyP50Ms": 30,
+    "latencyP99Ms": 120,
+    "cosmos429Count": 0,
+    "ruUsage": 35,
+    "serverSideLatencyMs": 11,
+    "hostCpuPercent": 19,
+    "checkoutSuccessRate": 1,
+    "recentDeploymentEvent": false,
+    "activeToggles": [],
+    "sqlQueryLatencyMs": 28,
+    "sqlErrorCount": 0,
+    "timestamp": "2025-01-01T00:00:00.000Z"
+  },
+  "expectedClassification": {
+    "primary": "INSUFFICIENT_EVIDENCE",
+    "secondaryIncludes": [],
+    "confidence": "LOW"
+  }
+}

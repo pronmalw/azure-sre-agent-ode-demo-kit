@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: contoso-retail-api
+  namespace: contoso-retail
+spec:
+  selector:
+    app: contoso-retail-api
+  ports:
+    - port: 3001
+      targetPort: 3001
+      protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: contoso-retail-web
+  namespace: contoso-retail
+spec:
+  selector:
+    app: contoso-retail-web
+  ports:
+    - port: 80
+      targetPort: 80
+      protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: contoso-retail-web-public
+  namespace: contoso-retail
+spec:
+  selector:
+    app: contoso-retail-web
+  ports:
+    - port: 80
+      targetPort: 80
+      protocol: TCP
+  type: LoadBalancer

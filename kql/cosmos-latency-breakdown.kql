@@ -1,0 +1,9 @@
+// Cosmos client vs server latency
+// Contoso Retail — Azure SRE Agent Demo
+// Usage: Paste into Log Analytics or Application Insights Logs
+
+dependencies
+| where target has 'documents.azure.com'
+| extend serverMs=todouble(customDimensions['serverSideLatencyMs'])
+| project timestamp, name, duration, serverMs, clientDelta=duration-serverMs
+| order by timestamp desc

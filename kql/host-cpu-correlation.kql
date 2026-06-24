@@ -1,0 +1,9 @@
+// Host CPU vs latency correlation
+// Contoso Retail — Azure SRE Agent Demo
+// Usage: Paste into Log Analytics or Application Insights Logs
+
+InsightsMetrics
+| where Name == 'cpuUsageNanoCores'
+| summarize avgCpu=avg(Val) by bin(TimeGenerated, 1m), Computer
+| join kind=leftouter (requests | summarize p99=percentile(duration,99) by bin(timestamp,1m)) on $left.TimeGenerated == $right.timestamp
+| project TimeGenerated, Computer, avgCpu, p99

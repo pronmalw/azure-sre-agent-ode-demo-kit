@@ -1,0 +1,9 @@
+// Cosmos RU consumption by operation
+// Contoso Retail — Azure SRE Agent Demo
+// Usage: Paste into Log Analytics or Application Insights Logs
+
+dependencies
+| where target has 'documents.azure.com'
+| extend ru = todouble(customDimensions['ruCharge'])
+| summarize totalRu=sum(ru) by name
+| order by totalRu desc

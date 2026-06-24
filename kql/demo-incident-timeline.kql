@@ -1,0 +1,8 @@
+// Demo incident events
+// Contoso Retail — Azure SRE Agent Demo
+// Usage: Paste into Log Analytics or Application Insights Logs
+
+traces
+| where customDimensions['eventType'] in ('chaos-enabled', 'chaos-disabled', 'chaos-reset', 'investigation', 'deployment')
+| project timestamp, message, eventType=tostring(customDimensions['eventType'])
+| order by timestamp asc

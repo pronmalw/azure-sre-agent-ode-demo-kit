@@ -1,0 +1,38 @@
+{
+  "scenarioId": "multiple-cosmos-clients",
+  "name": "Multiple Cosmos clients",
+  "description": "SDK client created per request.",
+  "chaosState": {
+    "hotPartition": false,
+    "metadataThrottling": false,
+    "multipleClients": true,
+    "highCpu": false,
+    "crossPartitionQuery": false,
+    "largeDocument": false,
+    "missingIndexing": false,
+    "pointReadMisuse": false,
+    "sqlSlowQuery": false,
+    "sqlConnectionPressure": false
+  },
+  "telemetry": {
+    "latencyP50Ms": 210,
+    "latencyP99Ms": 1450,
+    "cosmos429Count": 14,
+    "ruUsage": 520,
+    "serverSideLatencyMs": 14,
+    "hostCpuPercent": 40,
+    "checkoutSuccessRate": 0.92,
+    "recentDeploymentEvent": false,
+    "activeToggles": [
+      "multipleClients"
+    ],
+    "sqlQueryLatencyMs": 55,
+    "sqlErrorCount": 0,
+    "timestamp": "2025-01-01T00:00:00.000Z"
+  },
+  "expectedClassification": {
+    "primary": "APPLICATION_OR_CLIENT_SIDE",
+    "secondaryIncludes": [],
+    "confidence": "HIGH"
+  }
+}

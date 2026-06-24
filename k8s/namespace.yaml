@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: contoso-retail
+  labels:
+    app: contoso-retail
+    purpose: sre-agent-demo

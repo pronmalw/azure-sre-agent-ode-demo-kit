@@ -1,0 +1,38 @@
+{
+  "scenarioId": "high-cpu-host-saturation",
+  "name": "High CPU host saturation",
+  "description": "Only CPU burn path enabled.",
+  "chaosState": {
+    "hotPartition": false,
+    "metadataThrottling": false,
+    "multipleClients": false,
+    "highCpu": true,
+    "crossPartitionQuery": false,
+    "largeDocument": false,
+    "missingIndexing": false,
+    "pointReadMisuse": false,
+    "sqlSlowQuery": false,
+    "sqlConnectionPressure": false
+  },
+  "telemetry": {
+    "latencyP50Ms": 480,
+    "latencyP99Ms": 2400,
+    "cosmos429Count": 0,
+    "ruUsage": 75,
+    "serverSideLatencyMs": 12,
+    "hostCpuPercent": 85,
+    "checkoutSuccessRate": 0.89,
+    "recentDeploymentEvent": false,
+    "activeToggles": [
+      "highCpu"
+    ],
+    "sqlQueryLatencyMs": 65,
+    "sqlErrorCount": 0,
+    "timestamp": "2025-01-01T00:00:00.000Z"
+  },
+  "expectedClassification": {
+    "primary": "HOST_OR_RUNTIME",
+    "secondaryIncludes": [],
+    "confidence": "HIGH"
+  }
+}

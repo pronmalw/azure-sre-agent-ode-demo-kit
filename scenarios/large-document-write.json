@@ -1,0 +1,38 @@
+{
+  "scenarioId": "large-document-write",
+  "name": "Large document write",
+  "description": "Oversized documents on write path.",
+  "chaosState": {
+    "hotPartition": false,
+    "metadataThrottling": false,
+    "multipleClients": false,
+    "highCpu": false,
+    "crossPartitionQuery": false,
+    "largeDocument": true,
+    "missingIndexing": false,
+    "pointReadMisuse": false,
+    "sqlSlowQuery": false,
+    "sqlConnectionPressure": false
+  },
+  "telemetry": {
+    "latencyP50Ms": 175,
+    "latencyP99Ms": 1100,
+    "cosmos429Count": 12,
+    "ruUsage": 900,
+    "serverSideLatencyMs": 16,
+    "hostCpuPercent": 28,
+    "checkoutSuccessRate": 0.94,
+    "recentDeploymentEvent": false,
+    "activeToggles": [
+      "largeDocument"
+    ],
+    "sqlQueryLatencyMs": 58,
+    "sqlErrorCount": 0,
+    "timestamp": "2025-01-01T00:00:00.000Z"
+  },
+  "expectedClassification": {
+    "primary": "APPLICATION_OR_CLIENT_SIDE",
+    "secondaryIncludes": [],
+    "confidence": "HIGH"
+  }
+}

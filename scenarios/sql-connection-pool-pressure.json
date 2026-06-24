@@ -1,0 +1,38 @@
+{
+  "scenarioId": "sql-connection-pool-pressure",
+  "name": "SQL connection pool pressure",
+  "description": "Connections are held too long.",
+  "chaosState": {
+    "hotPartition": false,
+    "metadataThrottling": false,
+    "multipleClients": false,
+    "highCpu": false,
+    "crossPartitionQuery": false,
+    "largeDocument": false,
+    "missingIndexing": false,
+    "pointReadMisuse": false,
+    "sqlSlowQuery": false,
+    "sqlConnectionPressure": true
+  },
+  "telemetry": {
+    "latencyP50Ms": 280,
+    "latencyP99Ms": 1650,
+    "cosmos429Count": 0,
+    "ruUsage": 65,
+    "serverSideLatencyMs": 12,
+    "hostCpuPercent": 25,
+    "checkoutSuccessRate": 0.88,
+    "recentDeploymentEvent": false,
+    "activeToggles": [
+      "sqlConnectionPressure"
+    ],
+    "sqlQueryLatencyMs": 2100,
+    "sqlErrorCount": 2,
+    "timestamp": "2025-01-01T00:00:00.000Z"
+  },
+  "expectedClassification": {
+    "primary": "SQL_DATABASE_OR_SCHEMA",
+    "secondaryIncludes": [],
+    "confidence": "HIGH"
+  }
+}
