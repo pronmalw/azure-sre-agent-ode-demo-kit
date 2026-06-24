@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+build/
+out/
+*.js.map
+
+# Environment / secrets — NEVER COMMIT
+.env
+.env.*
+!.env.example
+*.env
+
+# Azure / kubeconfig / credentials — NEVER COMMIT
+.azure/
+kubeconfig
+*.kubeconfig
+azureauth.json
+local.settings.json
+
+# IDE
+.vscode/settings.json
+.idea/
+*.suo
+*.user
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Bicep compiled ARM
+infra/main.json
+infra/modules/*.json
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Terraform (if ever used)
+*.tfstate
+*.tfstate.backup
+.terraform/
