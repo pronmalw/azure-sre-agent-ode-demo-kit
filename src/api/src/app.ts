@@ -1,4 +1,4 @@
-import applicationInsights from 'applicationinsights';
+import * as applicationInsights from 'applicationinsights';
 import compression from 'compression';
 import cors from 'cors';
 import express from 'express';
