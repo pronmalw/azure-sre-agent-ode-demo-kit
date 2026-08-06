@@ -20,7 +20,7 @@ This kit deploys a realistic **Contoso Retail** e-commerce workload on **AKS** b
 - **App URL:** _TODO after deploy_
 - **Ops panel:** `<app-url>/ops`
 - **SRE Agent view:** `<app-url>/sre-agent`
-- **GitHub repo:** https://github.com/Azure/azure-sre-agent-ode-demo-kit
+- **GitHub repo:** https://github.com/pronmalw/azure-sre-agent-ode-demo-kit
 
 ## Prerequisites
 
@@ -62,7 +62,7 @@ See [`docs/data-placement.md`](docs/data-placement.md) for full guidance.
 
 ```bash
 # 1. Clone
-git clone https://github.com/Azure/azure-sre-agent-ode-demo-kit.git
+git clone https://github.com/pronmalw/azure-sre-agent-ode-demo-kit.git
 cd azure-sre-agent-ode-demo-kit
 
 # 2. Copy env template
