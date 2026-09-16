@@ -309,7 +309,10 @@ export class CosmosService {
         + (chaos.crossPartitionQuery ? 80 : 0)
         + (chaos.missingIndexing ? 120 : 0)
         + (chaos.pointReadMisuse ? 45 : 0)
-        + (chaos.largeDocument ? 70 : 0);
+        + (chaos.largeDocument ? 70 : 0)
+        // Simulated event-loop CPU starvation delaying request completion, so highCpu produces
+        // real measurable p99 latency instead of only a background CPU-burn side effect.
+        + (chaos.highCpu ? 1200 : 0);
 
       if (additionalLatency > 0) {
         await delay(additionalLatency);

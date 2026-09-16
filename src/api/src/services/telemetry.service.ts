@@ -71,9 +71,10 @@ export class TelemetryService {
       fibonacci(35);
     }
 
+    // highCpu alone must clear the classifier's >70% HOST_OR_RUNTIME threshold (15 + 65 = 80).
     const simulatedHostCpu = 15
       + (this.chaosState.multipleClients ? 15 : 0)
-      + (this.chaosState.highCpu ? 45 : 0)
+      + (this.chaosState.highCpu ? 65 : 0)
       + (this.chaosState.sqlConnectionPressure ? 10 : 0);
 
     const highCosmosSignals = cosmosOps.filter((record) => record.statusCode === 429).length > 10;
