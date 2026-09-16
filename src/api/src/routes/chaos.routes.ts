@@ -15,6 +15,7 @@ const toggles: (keyof ChaosState)[] = [
   'pointReadMisuse',
   'sqlSlowQuery',
   'sqlConnectionPressure',
+  'vpnConnectivityIssue',
 ];
 
 chaosRouter.get('/', (_req, res) => {

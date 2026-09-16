@@ -13,6 +13,7 @@ const emptyState: ChaosState = {
   pointReadMisuse: false,
   sqlSlowQuery: false,
   sqlConnectionPressure: false,
+  vpnConnectivityIssue: false,
 };
 
 export const useChaos = () => {

@@ -1,0 +1,39 @@
+{
+  "scenarioId": "vpn-connectivity-issue",
+  "name": "Azure VPN Gateway connectivity issue",
+  "description": "Azure VPN Gateway tunnel down, causing hybrid/on-premises connectivity loss. No Cosmos/SQL chaos toggles active.",
+  "chaosState": {
+    "hotPartition": false,
+    "metadataThrottling": false,
+    "multipleClients": false,
+    "highCpu": false,
+    "crossPartitionQuery": false,
+    "largeDocument": false,
+    "missingIndexing": false,
+    "pointReadMisuse": false,
+    "sqlSlowQuery": false,
+    "sqlConnectionPressure": false,
+    "vpnConnectivityIssue": true
+  },
+  "telemetry": {
+    "latencyP50Ms": 45,
+    "latencyP99Ms": 320,
+    "cosmos429Count": 0,
+    "ruUsage": 60,
+    "serverSideLatencyMs": 14,
+    "hostCpuPercent": 18,
+    "checkoutSuccessRate": 0.97,
+    "recentDeploymentEvent": false,
+    "activeToggles": ["vpnConnectivityIssue"],
+    "sqlQueryLatencyMs": 40,
+    "sqlErrorCount": 0,
+    "networkPacketLossPercent": 42,
+    "vpnTunnelStatus": "down",
+    "timestamp": "2025-01-01T00:00:00.000Z"
+  },
+  "expectedClassification": {
+    "primary": "NETWORK_OR_CONNECTIVITY",
+    "secondaryIncludes": [],
+    "confidence": "HIGH"
+  }
+}

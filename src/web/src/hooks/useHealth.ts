@@ -19,6 +19,7 @@ const fallbackHealth: HealthResponse = {
     pointReadMisuse: false,
     sqlSlowQuery: false,
     sqlConnectionPressure: false,
+    vpnConnectivityIssue: false,
   },
   timestamp: new Date().toISOString(),
 };

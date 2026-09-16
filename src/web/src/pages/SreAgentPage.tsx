@@ -9,6 +9,7 @@ const classificationColors: Record<string, string> = {
   DATABASE_CONFIG_OR_DATA_MODEL: 'bg-amber-100 text-amber-900',
   SQL_DATABASE_OR_SCHEMA: 'bg-yellow-100 text-yellow-900',
   HOST_OR_RUNTIME: 'bg-violet-100 text-violet-900',
+  NETWORK_OR_CONNECTIVITY: 'bg-sky-100 text-sky-900',
   INSUFFICIENT_EVIDENCE: 'bg-slate-200 text-slate-800',
 };
 

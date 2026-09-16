@@ -60,6 +60,7 @@ The application has a controlled anti-pattern system reachable at `GET /api/ops`
 | `pointReadMisuse` | `/api/chaos/pointReadMisuse/on` | Uses query instead of point read |
 | `sqlSlowQuery` | `/api/chaos/sqlSlowQuery/on` | Issues unoptimised SQL scan queries |
 | `sqlConnectionPressure` | `/api/chaos/sqlConnectionPressure/on` | Opens new SQL connections per request |
+| `vpnConnectivityIssue` | `/api/chaos/vpnConnectivityIssue/on` | Azure VPN Gateway tunnel down, high packet loss on hybrid connectivity |
 | Reset all | `/api/chaos/reset` | Disables all toggles, returns to healthy |
 
 **All toggles are disabled by default. Enabling them is safe — affects only this demo resource group.**
@@ -78,6 +79,7 @@ The application has a controlled anti-pattern system reachable at `GET /api/ops`
 | pointReadMisuse | Low | High | Low | Low | None |
 | sqlSlowQuery | None | None | Low | Medium | High |
 | sqlConnectionPressure | None | None | Medium | Medium | High |
+| vpnConnectivityIssue | None | None | Low | Medium | None (network path only) |
 
 ## Expected Incident Classification
 

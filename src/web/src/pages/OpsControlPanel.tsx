@@ -5,7 +5,7 @@ import { useChaos } from '../hooks/useChaos';
 import { ChaosState, OpsResponse } from '../types';
 import api from '../utils/api';
 
-const toggleMetadata: { key: keyof ChaosState; tag: 'COSMOS' | 'SQL' | 'HOST'; description: string }[] = [
+const toggleMetadata: { key: keyof ChaosState; tag: 'COSMOS' | 'SQL' | 'HOST' | 'NETWORK'; description: string }[] = [
   { key: 'hotPartition', tag: 'COSMOS', description: 'Force skewed partition key routing and synthetic 429 pressure.' },
   { key: 'metadataThrottling', tag: 'COSMOS', description: 'Re-fetch container metadata on every request.' },
   { key: 'multipleClients', tag: 'COSMOS', description: 'Create a new CosmosClient per operation.' },
@@ -16,6 +16,7 @@ const toggleMetadata: { key: keyof ChaosState; tag: 'COSMOS' | 'SQL' | 'HOST'; d
   { key: 'pointReadMisuse', tag: 'COSMOS', description: 'Query by id instead of using a point read.' },
   { key: 'sqlSlowQuery', tag: 'SQL', description: 'Inject slow query behaviour into SQL operations.' },
   { key: 'sqlConnectionPressure', tag: 'SQL', description: 'Hold SQL connections longer than normal release.' },
+  { key: 'vpnConnectivityIssue', tag: 'NETWORK', description: 'Simulate an Azure VPN Gateway tunnel outage with high packet loss.' },
 ];
 
 const metricCards = (telemetry: OpsResponse['telemetrySnapshot']) => [
@@ -43,6 +44,8 @@ export const OpsControlPanel = () => {
       activeToggles: [],
       sqlQueryLatencyMs: 0,
       sqlErrorCount: 0,
+      networkPacketLossPercent: 0,
+      vpnTunnelStatus: 'connected',
       timestamp: new Date().toISOString(),
     },
     activeIncident: false,

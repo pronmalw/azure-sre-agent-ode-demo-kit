@@ -12,6 +12,7 @@ const COSMOS_TOGGLES = [
 const APP_TOGGLES = ['hotPartition', 'metadataThrottling', 'multipleClients', 'largeDocument'] as const;
 const DB_MODEL_TOGGLES = ['crossPartitionQuery', 'missingIndexing', 'pointReadMisuse'] as const;
 const SQL_TOGGLES = ['sqlSlowQuery', 'sqlConnectionPressure'] as const;
+const NETWORK_TOGGLES = ['vpnConnectivityIssue'] as const;
 
 const VERIFICATION_CRITERIA = [
   'p99 end-to-end latency returns to <200ms baseline',
@@ -22,7 +23,8 @@ const VERIFICATION_CRITERIA = [
   'Unindexed query RU improves after indexing policy restored',
   'Checkout order write succeeds in Azure SQL in <200ms',
   'SQL query latency returns to <100ms',
-  'SQL connection pool utilization <60%'
+  'SQL connection pool utilization <60%',
+  'Azure VPN Gateway tunnel status returns to Connected with 0% packet loss'
 ];
 
 const hasToggle = (snapshot: TelemetrySnapshot, toggle: string): boolean => snapshot.activeToggles.includes(toggle);
@@ -75,6 +77,7 @@ export const classifyIncident = (snapshot: TelemetrySnapshot): SreAgentReport =>
   const anyAppToggle = APP_TOGGLES.some((toggle) => activeToggleSet.has(toggle));
   const anyDbToggle = DB_MODEL_TOGGLES.some((toggle) => activeToggleSet.has(toggle));
   const anySqlToggle = SQL_TOGGLES.some((toggle) => activeToggleSet.has(toggle));
+  const anyNetworkToggle = NETWORK_TOGGLES.some((toggle) => activeToggleSet.has(toggle));
   const onlyHighCpuToggle = activeToggleSet.size === 1 && activeToggleSet.has('highCpu');
   const onlyDbToggles = activeToggleSet.size > 0 && [...activeToggleSet].every((toggle) => DB_MODEL_TOGGLES.includes(toggle as (typeof DB_MODEL_TOGGLES)[number]));
 
@@ -95,6 +98,9 @@ export const classifyIncident = (snapshot: TelemetrySnapshot): SreAgentReport =>
     confidence = ConfidenceLevel.HIGH;
   } else if (anySqlToggle && snapshot.sqlQueryLatencyMs > 1000) {
     primaryClassification = IncidentClassification.SQL_DATABASE_OR_SCHEMA;
+    confidence = ConfidenceLevel.HIGH;
+  } else if (anyNetworkToggle && snapshot.networkPacketLossPercent > 20) {
+    primaryClassification = IncidentClassification.NETWORK_OR_CONNECTIVITY;
     confidence = ConfidenceLevel.HIGH;
   }
 
@@ -154,6 +160,9 @@ export const classifyIncident = (snapshot: TelemetrySnapshot): SreAgentReport =>
   if (hasToggle(snapshot, 'sqlConnectionPressure')) {
     addUnique(evidence, 'SQL connection pool pressure: connections held beyond normal release');
   }
+  if (hasToggle(snapshot, 'vpnConnectivityIssue')) {
+    addUnique(evidence, `Azure VPN Gateway tunnel status: ${snapshot.vpnTunnelStatus} — packet loss ${snapshot.networkPacketLossPercent}% on the hybrid connectivity path`);
+  }
   if (snapshot.recentDeploymentEvent) {
     addUnique(evidence, 'Recent deployment/change event detected — correlates with incident start');
   }
@@ -179,6 +188,9 @@ export const classifyIncident = (snapshot: TelemetrySnapshot): SreAgentReport =>
   }
   if (!snapshot.recentDeploymentEvent) {
     ruledOutCauses.push('Azure regional outage ruled out: no Azure Service Health events detected');
+  }
+  if (!hasToggle(snapshot, 'vpnConnectivityIssue') && snapshot.networkPacketLossPercent === 0) {
+    ruledOutCauses.push(`Azure VPN Gateway connectivity ruled out: tunnel status ${snapshot.vpnTunnelStatus}, 0% packet loss`);
   }
 
   const missingEvidence = ['No packet capture or client network trace collected yet', 'No query plan capture attached for Cosmos or SQL request path'];
@@ -217,6 +229,9 @@ export const classifyIncident = (snapshot: TelemetrySnapshot): SreAgentReport =>
   if (hasToggle(snapshot, 'sqlConnectionPressure')) {
     immediateSafeActions.push('Disable SQL connection pressure — ensure connections returned to pool promptly');
   }
+  if (hasToggle(snapshot, 'vpnConnectivityIssue')) {
+    immediateSafeActions.push('Disable VPN connectivity chaos toggle — verify Azure VPN Gateway tunnel status, BGP session state, and shared key configuration');
+  }
   immediateSafeActions.push('Verify singleton CosmosClient initialized at application startup and reused across all requests');
   immediateSafeActions.push('Verify SQL connection pool max size is appropriate for expected concurrency');
 
@@ -225,6 +240,7 @@ export const classifyIncident = (snapshot: TelemetrySnapshot): SreAgentReport =>
     'Scale AKS node pool — temporary mitigation pending root cause resolution and cost review',
     'Increase Cosmos DB throughput/autoscale — temporary mitigation only; pending cost/risk review',
     'Add SQL index — requires query plan review and DBA approval in production-like environment',
+    'Reset or resize the Azure VPN Gateway connection — requires a network change window and approval',
   ];
 
   const doNotDoGuidance: string[] = [];
@@ -236,6 +252,9 @@ export const classifyIncident = (snapshot: TelemetrySnapshot): SreAgentReport =>
   if (!anySqlToggle) {
     doNotDoGuidance.push(`DO NOT blame Azure SQL when SQL signals are healthy — SQL latency is ${snapshot.sqlQueryLatencyMs}ms`);
   }
+  if (primaryClassification === IncidentClassification.NETWORK_OR_CONNECTIVITY) {
+    doNotDoGuidance.push('DO NOT delete or recreate the Azure VPN Gateway — restart only the affected connection after confirming shared key and on-premises device configuration');
+  }
   doNotDoGuidance.push('DO NOT leave demo chaos toggles enabled — reset before any customer handoff');
 
   const escalationRecommendation =
@@ -245,7 +264,9 @@ export const classifyIncident = (snapshot: TelemetrySnapshot): SreAgentReport =>
         ? 'Consider escalating to Azure Support — server-side signals suggest possible service degradation. Include CRI/subscription ID and telemetry exports.'
         : primaryClassification === IncidentClassification.SQL_DATABASE_OR_SCHEMA
           ? 'Escalate to the SQL/data engineering owner if latency remains above 1000ms after disabling synthetic pressure. Azure escalation is not required unless platform errors persist.'
-          : 'Keep escalation within the Contoso engineering response bridge while corrective actions are validated. Escalate externally only if ruled-out causes become active signals.';
+          : primaryClassification === IncidentClassification.NETWORK_OR_CONNECTIVITY
+            ? 'Escalate to network engineering immediately. If the Azure VPN Gateway tunnel remains down after basic connectivity checks, open an Azure Support case referencing the Gateway resource ID and connection name.'
+            : 'Keep escalation within the Contoso engineering response bridge while corrective actions are validated. Escalate externally only if ruled-out causes become active signals.';
 
   const topIssues = evidence.slice(0, 3).join('; ') || 'insufficient evidence for a conclusive root cause';
   const customerImpact =
@@ -268,7 +289,9 @@ export const classifyIncident = (snapshot: TelemetrySnapshot): SreAgentReport =>
             ? 'Remove synchronous CPU-heavy work from the request path and right-size AKS runtime capacity.'
             : primaryClassification === IncidentClassification.AZURE_SERVICE_SIDE
               ? 'Capture service-side evidence and coordinate with Azure Support while maintaining customer communications.'
-              : 'Collect additional telemetry to determine a durable corrective action.';
+              : primaryClassification === IncidentClassification.NETWORK_OR_CONNECTIVITY
+                ? 'Restore the Azure VPN Gateway tunnel — verify shared key, BGP peering, and on-premises device configuration, then validate steady-state connectivity under load.'
+                : 'Collect additional telemetry to determine a durable corrective action.';
 
   const rollbackGuidance =
     'Rollback guidance: if approved changes are applied, revert the indexing policy change, reset AKS node scaling to baseline, roll back any Cosmos throughput increase, and remove non-essential SQL indexes after confirming the incident has cleared. For code fixes, disable the corresponding chaos path and redeploy the last known-good build.';

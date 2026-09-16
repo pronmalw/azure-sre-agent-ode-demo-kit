@@ -76,6 +76,7 @@ export interface ChaosState {
   pointReadMisuse: boolean;
   sqlSlowQuery: boolean;
   sqlConnectionPressure: boolean;
+  vpnConnectivityIssue: boolean;
 }
 
 export interface TelemetrySnapshot {
@@ -90,6 +91,8 @@ export interface TelemetrySnapshot {
   activeToggles: string[];
   sqlQueryLatencyMs: number;
   sqlErrorCount: number;
+  networkPacketLossPercent: number;
+  vpnTunnelStatus: 'connected' | 'degraded' | 'down';
   timestamp: string;
 }
 

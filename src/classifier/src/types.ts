@@ -10,6 +10,8 @@ export interface TelemetrySnapshot {
   activeToggles: string[];
   sqlQueryLatencyMs: number;
   sqlErrorCount: number;
+  networkPacketLossPercent: number;
+  vpnTunnelStatus: 'connected' | 'degraded' | 'down';
   timestamp: string;
 }
 

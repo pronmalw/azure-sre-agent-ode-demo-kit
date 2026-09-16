@@ -71,6 +71,7 @@ sreAgentRouter.post('/verify-recovery', async (_req, res, next) => {
       { criterion: 'Checkout order write succeeds in Azure SQL in <200ms', pass: snapshot.sqlQueryLatencyMs < 200 },
       { criterion: 'SQL query latency returns to <100ms', pass: snapshot.sqlQueryLatencyMs < 100 },
       { criterion: 'SQL connection pool utilization <60%', pass: !getChaosService().getState().sqlConnectionPressure },
+      { criterion: 'Azure VPN Gateway tunnel status returns to Connected with 0% packet loss', pass: !getChaosService().getState().vpnConnectivityIssue },
     ];
     res.json({ recovered: checks.every((check) => check.pass), checks, snapshot, cachedReport });
   } catch (error) {

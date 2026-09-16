@@ -79,6 +79,9 @@ export class TelemetryService {
     const highCosmosSignals = cosmosOps.filter((record) => record.statusCode === 429).length > 10;
     const likelyAzureServiceIssue = Object.values(this.chaosState).every((enabled) => !enabled) && highCosmosSignals && percentile(latencies, 99) > 1000;
 
+    const networkPacketLossPercent = this.chaosState.vpnConnectivityIssue ? 42 : 0;
+    const vpnTunnelStatus: 'connected' | 'degraded' | 'down' = this.chaosState.vpnConnectivityIssue ? 'down' : 'connected';
+
     return {
       latencyP50Ms: percentile(latencies, 50),
       latencyP99Ms: percentile(latencies, 99),
@@ -98,6 +101,8 @@ export class TelemetryService {
         .map(([toggle]) => toggle),
       sqlQueryLatencyMs: average(sqlOps.map((record) => record.latencyMs)),
       sqlErrorCount: sqlOps.filter((record) => record.statusCode >= 400).length,
+      networkPacketLossPercent,
+      vpnTunnelStatus,
       timestamp: new Date().toISOString(),
     };
   }

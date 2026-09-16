@@ -11,6 +11,7 @@ const toggles = [
   'pointReadMisuse',
   'sqlSlowQuery',
   'sqlConnectionPressure',
+  'vpnConnectivityIssue',
 ];
 
 describe('chaos endpoints', () => {
