@@ -52,6 +52,15 @@ module monitoring 'modules/monitoring.bicep' = {
   }
 }
 
+module vnet 'modules/vnet.bicep' = if (hostingMode == 'aks') {
+  name: 'vnet'
+  params: {
+    location: location
+    tags: tags
+    resourceToken: resourceToken
+  }
+}
+
 module cosmos 'modules/cosmos-nosql-sqlapi.bicep' = {
   name: 'cosmos'
   params: {
@@ -94,6 +103,19 @@ module aks 'modules/aks.bicep' = if (hostingMode == 'aks') {
     vmSize: aksVmSize
     enableContainerInsights: enableContainerInsights
     logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
+    vnetSubnetId: vnet!.outputs.aksSubnetId
+  }
+}
+
+// AKS's system-assigned identity needs Network Contributor on the custom VNet
+// because the cluster nodes live in a bring-your-own subnet shared with the VPN Gateway.
+resource aksNetworkContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (hostingMode == 'aks') {
+  name: guid(resourceGroup().id, 'aks-network-contributor', resourceToken)
+  scope: resourceGroup()
+  properties: {
+    principalId: aks!.outputs.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4d97b98b-1d4f-4787-a291-c67834d212e7')
   }
 }
 
@@ -120,6 +142,9 @@ output cosmosEndpoint string = cosmos.outputs.cosmosEndpoint
 output cosmosAccountName string = cosmos.outputs.cosmosAccountName
 output sqlServerFqdn string = azureSql.outputs.sqlServerFqdn
 output logAnalyticsWorkspaceId string = monitoring.outputs.logAnalyticsWorkspaceId
+output appInsightsConnectionString string = monitoring.outputs.connectionString
 output aksClusterName string = hostingMode == 'aks' ? aks!.outputs.clusterName : ''
 output acrLoginServer string = hostingMode == 'aks' ? acr!.outputs.acrLoginServer : ''
+output vnetGatewaySubnetId string = hostingMode == 'aks' ? vnet!.outputs.gatewaySubnetId : ''
+output vnetName string = hostingMode == 'aks' ? vnet!.outputs.vnetName : ''
 output appUrl string = ''
