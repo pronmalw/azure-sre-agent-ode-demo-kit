@@ -28,7 +28,14 @@ param onPremGatewaySubnetPrefix string = '10.20.255.0/27'
 @description('IPsec pre-shared key used when the tunnel is healthy. The chaos toggle rotates this to a mismatched value to break the tunnel, and restores it to reconnect.')
 param healthySharedKey string
 
-var vpnGatewaySku = 'VpnGw1'
+// VpnGw1-5 non-AZ SKUs are retired; only the AZ variants can be created now.
+var vpnGatewaySku = 'VpnGw1AZ'
+// AZ gateway SKUs require zone-redundant Standard public IPs.
+var publicIpZones = [
+  '1'
+  '2'
+  '3'
+]
 
 // --- Simulated on-premises side ---
 resource onPremVnet 'Microsoft.Network/virtualNetworks@2023-09-01' = {
@@ -59,6 +66,7 @@ resource pipOnPrem 'Microsoft.Network/publicIPAddresses@2023-09-01' = {
   sku: {
     name: 'Standard'
   }
+  zones: publicIpZones
   properties: {
     publicIPAllocationMethod: 'Static'
   }
@@ -99,6 +107,7 @@ resource pipMain 'Microsoft.Network/publicIPAddresses@2023-09-01' = {
   sku: {
     name: 'Standard'
   }
+  zones: publicIpZones
   properties: {
     publicIPAllocationMethod: 'Static'
   }

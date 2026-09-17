@@ -32,6 +32,9 @@ param aksClusterName string = 'aks-contoso-sreagent-demo'
 @description('Enable Container Insights')
 param enableContainerInsights bool = true
 
+@description('Attach AKS nodes to the custom VNet. Only valid at cluster creation time - Azure rejects changing agentPoolProfile.vnetSubnetID on an existing cluster.')
+param attachAksToVnet bool = false
+
 @secure()
 param sqlAdministratorPassword string = newGuid()
 
@@ -103,13 +106,13 @@ module aks 'modules/aks.bicep' = if (hostingMode == 'aks') {
     vmSize: aksVmSize
     enableContainerInsights: enableContainerInsights
     logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
-    vnetSubnetId: vnet!.outputs.aksSubnetId
+    vnetSubnetId: (hostingMode == 'aks' && attachAksToVnet) ? vnet!.outputs.aksSubnetId : ''
   }
 }
 
 // AKS's system-assigned identity needs Network Contributor on the custom VNet
-// because the cluster nodes live in a bring-your-own subnet shared with the VPN Gateway.
-resource aksNetworkContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (hostingMode == 'aks') {
+// only when the cluster nodes live in the bring-your-own subnet.
+resource aksNetworkContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (hostingMode == 'aks' && attachAksToVnet) {
   name: guid(resourceGroup().id, 'aks-network-contributor', resourceToken)
   scope: resourceGroup()
   properties: {

@@ -437,13 +437,13 @@ export class SqlService {
 
     try {
       if (chaos.sqlSlowQuery) {
-        await delay(2000);
+        await this.burnServerTime(2);
       }
 
       const result = await action();
 
       if (chaos.sqlConnectionPressure) {
-        await delay(5000);
+        await this.burnServerTime(5);
       }
 
       getTelemetryService().recordOperation({
@@ -464,6 +464,28 @@ export class SqlService {
         statusCode,
       });
       throw error;
+    }
+  }
+
+  /**
+   * Consumes real time inside Azure SQL so the slowness shows up as genuine
+   * server-side query duration in Query Store, sys.dm_exec_requests and the
+   * Azure Monitor SQL metrics the SRE Agent reads. Falls back to a local timer
+   * when SQL is not configured (local in-memory demo mode).
+   */
+  private async burnServerTime(seconds: number): Promise<void> {
+    if (!isSqlConfigured()) {
+      await delay(seconds * 1000);
+      return;
+    }
+
+    try {
+      const pool = await this.getPool();
+      const padded = String(Math.min(59, Math.max(1, Math.round(seconds)))).padStart(2, '0');
+      await pool.request().query(`WAITFOR DELAY '00:00:${padded}'`);
+    } catch (error) {
+      console.error('[sql] server-side delay failed, falling back to local delay:', (error as Error).message);
+      await delay(seconds * 1000);
     }
   }
 }

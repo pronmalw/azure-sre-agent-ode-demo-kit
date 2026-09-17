@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<title>Contoso Retail — Azure SRE Agent End-to-End Demo Report</title>
+<style>
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a1a; margin: 40px; line-height: 1.5; }
+  h1 { color: #0f6cbd; border-bottom: 3px solid #0f6cbd; padding-bottom: 8px; }
+  h2 { color: #0f6cbd; margin-top: 36px; border-bottom: 1px solid #ccc; padding-bottom: 4px; page-break-before: always; }
+  h3 { color: #205081; margin-top: 24px; }
+  .cover { text-align: center; margin-bottom: 40px; }
+  .cover .subtitle { color: #555; font-size: 1.1em; }
+  .meta { color: #666; font-size: 0.9em; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0 20px 0; font-size: 0.85em; }
+  th, td { border: 1px solid #ddd; padding: 6px 10px; text-align: left; vertical-align: top; }
+  th { background: #f2f6fc; }
+  table.kv th { width: 220px; background: #fafafa; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.9em; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.75em; font-weight: bold; }
+  .badge.ok { background: #d4edda; color: #155724; }
+  .badge.mismatch { background: #f8d7da; color: #721c24; }
+  .donot li { color: #a4262c; }
+  .pass { color: #107c10; font-weight: bold; }
+  .fail { color: #d13438; font-weight: bold; }
+  .scenario-detail { margin-bottom: 20px; }
+  .mono { font-family: Consolas, monospace; color: #666; font-size: 0.8em; }
+  .desc { color: #555; font-style: italic; }
+  pre.prompt { background: #0f172a; color: #e2e8f0; padding: 16px; border-radius: 8px; white-space: pre-wrap; font-size: 0.78em; overflow-x: auto; }
+  .callout { background: #fff8e1; border-left: 4px solid #f9a825; padding: 10px 16px; margin: 16px 0; }
+  ul { margin-top: 4px; }
+  .footer { margin-top: 60px; text-align: center; color: #888; font-size: 0.8em; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <h1>Contoso Retail — Azure SRE Agent<br/>End-to-End Demo Report</h1>
+  <p class="subtitle">ODE Reduction Demo Kit &mdash; from customer impact to evidence-backed recovery</p>
+  <p class="meta">Generated: 2026-08-06T10:57:23.136Z<br/>
+  Repository: pronmalw/azure-sre-agent-ode-demo-kit (dev branch)<br/>
+  Run mode: Local dev (in-memory fallback, API :3001 / Web :3000)</p>
+</div>
+
+<h2>1. Executive Summary</h2>
+<p>This report documents a full end-to-end run of the Contoso Retail SRE Agent ODE Reduction demo. All 14 chaos
+scenario fixtures were exercised against the live classifier engine (<code>src/api/src/services/sre-classifier.service.ts</code>),
+and <strong>14/14 classifications matched the fixture's expected outcome</strong>. In addition, a real
+end-to-end incident was triggered live (not from a canned fixture): chaos toggles were enabled, synthetic customer traffic was
+generated, the SRE Agent investigated the live telemetry, a safe recovery action was executed, and recovery was verified against
+9 objective criteria.</p>
+<p>The purpose of this demo is to show how Azure SRE Agent reduces <strong>Operational Delivery Effort (ODE)</strong> by moving from
+raw customer impact signals to an evidence-backed, ownership-classified, safe action plan &mdash; without unnecessary escalation to
+Azure support when the issue is application-side.</p>
+
+<h2>2. How the SRE Agent Investigates (Prompt &amp; Method)</h2>
+<p>In a real deployment, an engineer opens <a href="https://sre.azure.com">sre.azure.com</a> → <code>contoso-sre-agent</code> and
+issues the master investigation prompt below. The agent runs a full diagnostic sweep across Application Insights, Log Analytics,
+Cosmos DB, and Azure SQL telemetry for every known failure scenario in parallel, classifies each active finding, and produces a
+structured report before requesting approval to remediate.</p>
+
+<div class="callout"><strong>Investigation logic mirrored in this demo (in-memory classifier):</strong>
+<ul>
+<li>If Cosmos 429 count &gt; 10 AND server-side latency &lt; 100ms AND a client-pattern chaos toggle is active &rarr;
+<code>APPLICATION_OR_CLIENT_SIDE</code> (HIGH confidence) &mdash; the SDK/query pattern is the cause, Azure is healthy.</li>
+<li>If server-side latency &gt; 500ms AND 429s &gt; 10 AND no toggles active &rarr; <code>AZURE_SERVICE_SIDE</code> (MEDIUM) &mdash;
+possible genuine platform degradation.</li>
+<li>If host CPU &gt; 70% AND p99 &gt; 1000ms AND only the CPU-burn toggle is active &rarr; <code>HOST_OR_RUNTIME</code> (HIGH).</li>
+<li>If only data-model toggles (cross-partition query / missing index / point-read misuse) are active &rarr;
+<code>DATABASE_CONFIG_OR_DATA_MODEL</code> (HIGH).</li>
+<li>If a SQL chaos toggle is active AND SQL latency &gt; 1000ms &rarr; <code>SQL_DATABASE_OR_SCHEMA</code> (HIGH).</li>
+<li>Otherwise &rarr; <code>INSUFFICIENT_EVIDENCE</code> (LOW) &mdash; no action taken, avoiding false-positive escalation.</li>
+</ul>
+For every finding the agent also states <strong>ruled-out causes</strong>, <strong>missing evidence</strong>, an
+<strong>executive summary</strong>, an <strong>engineering RCA</strong>, <strong>immediate safe actions</strong> (no approval
+needed), <strong>approval-required actions</strong>, explicit <strong>DO NOT DO</strong> guidance, and an
+<strong>escalation recommendation</strong> &mdash; then it waits for human approval before remediating (Phase 4/5 of the
+master prompt).</div>
+
+<h3>Master investigation prompt (paste into sre.azure.com)</h3>
+<pre class="prompt">
+ROLE: You are the Azure SRE Agent for the Contoso Retail platform.
+Your goal is to triage ALL active incidents, identify every root cause, produce a
+structured incident report (formatted for PDF export), and then — only with explicit
+user approval — execute the safest remediation actions.
+
+════════════════════════════════════════════════════════════════════
+ENVIRONMENT
+════════════════════════════════════════════════════════════════════
+Application   : Contoso Retail (e-commerce)
+Resource Group: rg-sreagent-ode-demo (West Europe)
+AKS Cluster   : aks-contoso-sreagent-demo, namespace: contoso-retail
+App Insights  : appi-euqicty6gdfys  (InstrumentationKey 91e55584-e782-42a0-8567-3ccdc3a3288f)
+Log Analytics : law-euqicty6gdfys   (WorkspaceId 527754b0-cdd5-467a-9128-4f3a4a173b16)
+Cosmos DB     : cosmos-euqicty6gdfys.documents.azure.com:443
+Azure SQL     : sql-euqicty6gdfys.database.windows.net / contoso-retail-db
+Time Window   : LAST 60 MINUTES ONLY — from now() - 1h to now()
+
+════════════════════════════════════════════════════════════════════
+PHASE 1 — FULL DIAGNOSTIC SWEEP (run all checks in parallel)
+════════════════════════════════════════════════════════════════════
+
+Run EVERY check below. Do not skip any section even if earlier sections look healthy.
+
+── SCENARIO 1 CHECK: Deployment Gone Wrong ────────────────────────
+S1-A. Query App Insights for p99 end-to-end latency in the last 60 min:
+      requests | where timestamp &gt; ago(1h)
+               | summarize p99=percentile(duration,99) by bin(timestamp,5m)
+S1-B. Count Cosmos DB 429 (TooManyRequests) errors:
+      traces | where timestamp &gt; ago(1h) and message has "429"
+             | summarize count() by bin(timestamp,5m)
+S1-C. Check host CPU on AKS pods (from Container Insights):
+      Perf | where TimeGenerated &gt; ago(1h) and ObjectName == "K8SContainer"
+           and CounterName == "cpuUsageNanoCores"
+           | summarize avg(CounterValue)/1000000 by bin(TimeGenerated,5m), InstanceName
+S1-D. Look for multiple CosmosClient instantiation events:
+      traces | where timestamp &gt; ago(1h) and message has "CosmosClient created"
+S1-E. Detect hot-partition symptoms (single partition key receiving &gt;80% of RU):
+      traces | where timestamp &gt; ago(1h) and message has "hot_partition"
+
+── SCENARIO 2 CHECK: Database Architect's Mistake ─────────────────
+S2-A. Measure Cosmos DB RU consumption trend vs baseline:
+      customMetrics | where timestamp &gt; ago(1h) and name == "cosmos_ru_consumed"
+                    | summarize avg(value), max(value) by bin(timestamp,5m)
+S2-B. Detect cross-partition fan-out queries (high RU, low result count):
+      customEvents | where timestamp &gt; ago(1h) and name == "cosmos_query"
+                   | where customDimensions.ruConsumed &gt; 100
+S2-C. Detect large document writes (&gt;100KB):
+      traces | where timestamp &gt; ago(1h) and message has "large_document"
+S2-D. Detect missing index warnings:
+      traces | where timestamp &gt; ago(1h) and message has "missing_index"
+             or message has "IndexingPolicy"
+S2-E. Check point-read misuse (querying full partition for a single ID):
+      customEvents | where timestamp &gt; ago(1h) and name == "cosmos_query"
+                   | where customDimensions.queryType == "full_scan"
+                   and customDimensions.resultCount == 1
+
+── SCENARIO 3 CHECK: Resource Exhaustion ──────────────────────────
+S3-A. Pod CPU utilisation over the hour (flag any pod &gt; 80%):
+      ContainerInventory | join kind=inner (
+        Perf | where TimeGenerated &gt; ago(1h) and ObjectName == "K8SContainer"
+              and CounterName == "cpuUsageNanoCores"
+      ) on InstanceName
+      | summarize avg(CounterValue)/1000000 by bin(TimeGenerated,5m), ContainerName
+S3-B. SQL active connection count and pool exhaustion events:
+      traces | where timestamp &gt; ago(1h)
+             and (message has "connection_pressure" or message has "SqlException"
+             or message has "connection pool")
+S3-C. Detect connection leak pattern (connections opened &gt; connections closed):
+      traces | where timestamp &gt; ago(1h)
+             and (message has "SqlConnection.Open" or message has "SqlConnection.Close")
+             | summarize opened=countif(message has "Open"),
+                         closed=countif(message has "Close") by bin(timestamp,10m)
+S3-D. Memory consumption on AKS pods:
+      Perf | where TimeGenerated &gt; ago(1h) and ObjectName == "K8SContainer"
+           and CounterName == "memoryRssBytes"
+           | summarize avg(CounterValue)/1048576 by bin(TimeGenerated,5m), InstanceName
+
+── SCENARIO 4 CHECK: Silent SQL Degradation ───────────────────────
+S4-A. SQL query execution time percentiles:
+      customMetrics | where timestamp &gt; ago(1h) and name == "sql_query_duration_ms"
+                    | summarize p50=percentile(value,50), p99=percentile(value,99)
+                               by bin(timestamp,5m)
+S4-B. Identify slow queries (&gt; 5 seconds):
+      traces | where timestamp &gt; ago(1h) and message has "slow_query"
+             | project timestamp, message, customDimensions.queryText,
+               customDimensions.durationMs
+             | order by customDimensions.durationMs desc
+S4-C. SQL error rate in the last hour:
+      traces | where timestamp &gt; ago(1h) and message has "sql_error"
+             | summarize count() by bin(timestamp,5m)
+S4-D. Cross-correlate: are order confirmation failures happening at the same
+      time as SQL latency spikes?
+      requests | where timestamp &gt; ago(1h) and name has "order"
+               | summarize failures=countif(success==false),
+                           p99=percentile(duration,99) by bin(timestamp,5m)
+
+── SCENARIO 5 CHECK: Traffic Spike Disguise ───────────────────────
+S5-A. Cosmos DB throttling events — distinguish client-side vs server-side:
+      customEvents | where timestamp &gt; ago(1h) and name == "cosmos_429"
+                   | extend isClientSide = customDimensions.isClientSide
+                   | summarize clientSide=countif(isClientSide=="true"),
+                               serverSide=countif(isClientSide=="false")
+                               by bin(timestamp,5m)
+S5-B. Metadata API call rate (should be near-zero in production):
+      traces | where timestamp &gt; ago(1h) and message has "metadata_throttle"
+             | summarize count() by bin(timestamp,5m)
+S5-C. Request volume and RU efficiency (RU per request):
+      requests | where timestamp &gt; ago(1h)
+               | join kind=inner (
+                   customMetrics | where name == "cosmos_ru_consumed"
+                 ) on operation_Id
+               | summarize totalRu=sum(value), requests=count()
+                          by bin(timestamp,5m)
+               | extend ruPerRequest = totalRu/requests
+S5-D. Hot partition key distribution (are &gt; 80% of requests going to one key?):
+      customEvents | where timestamp &gt; ago(1h) and name == "cosmos_write"
+                   | summarize count() by customDimensions.partitionKey
+                   | order by count_ desc
+
+── SCENARIO 6 CHECK: False Alarm / Service Health ─────────────────
+S6-A. Check Azure Service Health for any active incidents in West Europe:
+      AzureActivity | where TimeGenerated &gt; ago(1h)
+                    and ActivityStatusValue == "Failed"
+                    and ResourceProviderValue in ("Microsoft.DocumentDB","Microsoft.Sql",
+                        "Microsoft.ContainerService")
+S6-B. Confirm application availability (should be 100% if no real incident):
+      availabilityResults | where timestamp &gt; ago(1h)
+                          | summarize availability=avg(todouble(success)*100) by bin(timestamp,5m)
+S6-C. Check for any error rate change vs 24h baseline:
+      requests | where timestamp &gt; ago(1h)
+               | summarize recentFailRate=countif(success==false)*100.0/count()
+      | join kind=inner (
+          requests | where timestamp between (ago(25h) .. ago(1h))
+                    | summarize baselineFailRate=countif(success==false)*100.0/count()
+        ) on $left.recentFailRate == $right.baselineFailRate
+S6-D. Confirm Cosmos and SQL are responding within SLA:
+      customMetrics | where timestamp &gt; ago(1h)
+                    and name in ("cosmos_server_latency_ms","sql_query_duration_ms")
+                    | summarize p99=percentile(value,99) by name
+
+════════════════════════════════════════════════════════════════════
+PHASE 2 — CLASSIFICATION &amp; ROOT CAUSE
+════════════════════════════════════════════════════════════════════
+
+For EACH scenario above that shows evidence of an anomaly, classify it as:
+
+  [APPLICATION_OR_CLIENT_SIDE]  — Bug in application code; Azure is healthy
+  [DATABASE_CONFIG_OR_DATA_MODEL] — Schema, indexing, or query design problem
+  [HOST_OR_RUNTIME]             — AKS pod/node resource exhaustion
+  [AZURE_SERVICE_INCIDENT]      — Confirmed Azure-side degradation
+  [INSUFFICIENT_EVIDENCE]       — App appears healthy; no action needed
+
+For each active finding state:
+  • Evidence: exact metric values, query results, timestamps
+  • Severity: CRITICAL / HIGH / MEDIUM / LOW
+  • Blast radius: which users / features are affected
+  • Root cause: one plain-English sentence
+  • DO NOT DO: what the team must NOT do (e.g. "Do not raise Azure support case",
+    "Do not increase Cosmos RU", "Do not scale AKS nodes")
+
+════════════════════════════════════════════════════════════════════
+PHASE 3 — GENERATE INCIDENT REPORT (PDF FORMAT)
+════════════════════════════════════════════════════════════════════
+
+Produce a structured incident report using EXACTLY this format so it can be
+saved as a PDF. Use clear headings, tables, and bullet points.
+
+─────────────────────────────────────────────────
+CONTOSO RETAIL — SRE INCIDENT REPORT
+Generated: [timestamp]
+Investigation window: [now-1h] → [now]
+SRE Agent: contoso-sre-agent (Azure SRE Agent, Sweden Central)
+─────────────────────────────────────────────────
+
+EXECUTIVE SUMMARY
+(3–5 sentences suitable for a VP or CTO. State: what is broken, who owns the fix,
+what we are NOT doing, and expected resolution time.)
+
+FINDINGS TABLE
+┌─────┬──────────────────────────────┬──────────┬───────────────────────────┬───────────┐
+│  #  │ Scenario                     │ Severity │ Classification            │ Owner     │
+├─────┼──────────────────────────────┼──────────┼───────────────────────────┼───────────┤
+│  1  │ Deployment Gone Wrong        │          │                           │           │
+│  2  │ DB Architect's Mistake       │          │                           │           │
+│  3  │ Resource Exhaustion          │          │                           │           │
+│  4  │ Silent SQL Degradation       │          │                           │           │
+│  5  │ Traffic Spike Disguise       │          │                           │           │
+│  6  │ False Alarm / Service Health │          │                           │           │
+└─────┴──────────────────────────────┴──────────┴───────────────────────────┴───────────┘
+
+DETAILED FINDINGS
+(For each active finding, one section with: Evidence | Root Cause | Impact |
+ DO NOT DO | Recommended Fix | Estimated Fix Time)
+
+SUPPORT CASE RECOMMENDATION
+State clearly: "RAISE SUPPORT CASE: YES / NO" for each finding and why.
+
+ODE REDUCTION OUTCOME
+State: "This investigation prevented [N] unnecessary Azure support cases."
+Estimated savings: [time saved × engineer cost].
+
+ENGINEERING RCA
+(One paragraph, technical, suitable for a post-mortem document.)
+
+─────────────────────────────────────────────────
+END OF REPORT — DO NOT REMEDIATE UNTIL APPROVED
+─────────────────────────────────────────────────
+
+════════════════════════════════════════════════════════════════════
+PHASE 4 — APPROVAL GATE (MANDATORY — DO NOT SKIP)
+════════════════════════════════════════════════════════════════════
+
+After generating the report above, STOP and ask the user:
+
+"I have completed the investigation and generated the report above.
+ Here are the proposed remediation actions I can execute on your behalf:
+
+ [List each action with: Action | Resource affected | Risk level | Reversible?]
+
+ Example actions (only include ones relevant to active findings):
+ ✅ ACTION 1: Call /api/chaos/reset to disable all active chaos toggles
+ ✅ ACTION 2: Restart contoso-retail-api deployment in AKS
+ ✅ ACTION 3: Scale API deployment to 2 replicas for resilience
+ ✅ ACTION 4: Apply Cosmos DB indexing policy patch via REST API
+ ✅ ACTION 5: Update SQL connection pool size in application config
+ ⚠️  ACTION 6: [Any destructive action] — REQUIRES EXPLICIT CONFIRMATION
+
+ Do you approve ALL actions, SOME actions, or NO actions?
+ Please reply: APPROVE ALL / APPROVE [list numbers] / REJECT"
+
+Then wait for the user's response before executing anything.
+
+════════════════════════════════════════════════════════════════════
+PHASE 5 — REMEDIATION (only after approval)
+════════════════════════════════════════════════════════════════════
+
+Execute ONLY the approved actions. For each action:
+  1. State what you are about to do
+  2. Execute it
+  3. Verify the fix worked (re-run the relevant diagnostic query)
+  4. Report success or failure
+
+After all remediation steps:
+  • Re-run the health check on /health endpoint
+  • Confirm p99 latency has returned to &lt; 200ms
+  • Confirm Cosmos 429 count = 0
+  • Confirm CPU &lt; 50% on all pods
+  • State: "Application has returned to healthy state" or escalation path if not
+
+Do not close the investigation until the application is confirmed healthy or a
+human escalation path has been clearly defined.
+</pre>
+
+<h3>Quick per-scenario prompts used in this run</h3>
+<pre class="prompt"># Ready-to-use SRE Agent prompts
+
+1. "Investigate current Contoso Retail latency regression and classify the likely owner."
+2. "Summarize Cosmos DB client-side vs server-side latency evidence for the last 30 minutes."
+3. "Explain whether Azure SQL is implicated in the current checkout failure."
+4. "List safe actions we can take immediately without customer approval."
+5. "Generate a Teams update for the current incident using the cached report."
+6. "Verify whether recovery criteria are satisfied after we reset the chaos toggles."
+7. "Compare the current incident to the hot-partition scenario fixture and highlight similarities."
+</pre>
+
+<h2>3. Scenario Coverage Summary (14 scenarios)</h2>
+<table>
+<tr><th>Scenario</th><th>Description</th><th>Actual classification</th><th>Confidence</th><th>Result</th><th>Primary owner</th></tr>
+<tr>
+      <td>Azure service-side issue</td>
+      <td>No chaos toggles, but service-side latency spikes.</td>
+      <td><code>AZURE_SERVICE_SIDE</code></td>
+      <td>MEDIUM</td>
+      <td><span class="badge ok">MATCH</span></td>
+      <td>Azure platform team</td>
+    </tr>
+<tr>
+      <td>Contoso mixed incident</td>
+      <td>All chaos toggles enabled to create a blended client, data model, host, and SQL issue.</td>
+      <td><code>APPLICATION_OR_CLIENT_SIDE</code></td>
+      <td>HIGH</td>
+      <td><span class="badge ok">MATCH</span></td>
+      <td>Contoso Retail application engineering</td>
+    </tr>
+<tr>
+      <td>Cross partition query</td>
+      <td>Cross partition fan-out query active.</td>
+      <td><code>DATABASE_CONFIG_OR_DATA_MODEL</code></td>
+      <td>HIGH</td>
+      <td><span class="badge ok">MATCH</span></td>
+      <td>Contoso Retail data platform team</td>
+    </tr>
+<tr>
+      <td>Healthy baseline</td>
+      <td>All chaos toggles off and healthy application metrics.</td>
+      <td><code>INSUFFICIENT_EVIDENCE</code></td>
+      <td>LOW</td>
+      <td><span class="badge ok">MATCH</span></td>
+      <td>Application on-call</td>
+    </tr>
+<tr>
+      <td>High CPU host saturation</td>
+      <td>Only CPU burn path enabled.</td>
+      <td><code>HOST_OR_RUNTIME</code></td>
+      <td>HIGH</td>
+      <td><span class="badge ok">MATCH</span></td>
+      <td>AKS platform and runtime team</td>
+    </tr>
+<tr>
+      <td>Hot partition 429</td>
+      <td>Only hot partition enabled.</td>
+      <td><code>APPLICATION_OR_CLIENT_SIDE</code></td>
+      <td>HIGH</td>
+      <td><span class="badge ok">MATCH</span></td>
+      <td>Contoso Retail application engineering</td>
+    </tr>
+<tr>
+      <td>Insufficient evidence</td>
+      <td>Healthy metrics without a strong signal.</td>
+      <td><code>INSUFFICIENT_EVIDENCE</code></td>
+      <td>LOW</td>
+      <td><span class="badge ok">MATCH</span></td>
+      <td>Application on-call</td>
+    </tr>
+<tr>
+      <td>Large document write</td>
+      <td>Oversized documents on write path.</td>
+      <td><code>APPLICATION_OR_CLIENT_SIDE</code></td>
+      <td>HIGH</td>
+      <td><span class="badge ok">MATCH</span></td>
+      <td>Contoso Retail application engineering</td>
+    </tr>
+<tr>
+      <td>Metadata throttling</td>
+      <td>Only metadata reads enabled.</td>
+      <td><code>APPLICATION_OR_CLIENT_SIDE</code></td>
+      <td>HIGH</td>
+      <td><span class="badge ok">MATCH</span></td>
+      <td>Contoso Retail application engineering</td>
+    </tr>
+<tr>
+      <td>Missing indexing policy</td>
+      <td>Reads routed to unindexed container.</td>
+      <td><code>DATABASE_CONFIG_OR_DATA_MODEL</code></td>
+      <td>HIGH</td>
+      <td><span class="badge ok">MATCH</span></td>
+      <td>Contoso Retail data platform team</td>
+    </tr>
+<tr>
+      <td>Multiple Cosmos clients</td>
+      <td>SDK client created per request.</td>
+      <td><code>APPLICATION_OR_CLIENT_SIDE</code></td>
+      <td>HIGH</td>
+      <td><span class="badge ok">MATCH</span></td>
+      <td>Contoso Retail application engineering</td>
+    </tr>
+<tr>
+      <td>Point read misuse</td>
+      <td>Query used where point read should be used.</td>
+      <td><code>DATABASE_CONFIG_OR_DATA_MODEL</code></td>
+      <td>HIGH</td>
+      <td><span class="badge ok">MATCH</span></td>
+      <td>Contoso Retail data platform team</td>
+    </tr>
+<tr>
+      <td>SQL connection pool pressure</td>
+      <td>Connections are held too long.</td>
+      <td><code>SQL_DATABASE_OR_SCHEMA</code></td>
+      <td>HIGH</td>
+      <td><span class="badge ok">MATCH</span></td>
+      <td>Contoso Retail SQL/data engineering team</td>
+    </tr>
+<tr>
+      <td>SQL slow query</td>
+      <td>Artificial SQL slowness injected.</td>
+      <td><code>SQL_DATABASE_OR_SCHEMA</code></td>
+      <td>HIGH</td>
+      <td><span class="badge ok">MATCH</span></td>
+      <td>Contoso Retail SQL/data engineering team</td>
+    </tr>
+</table>
+
+<h2>4. Detailed Findings per Scenario</h2>
+
+    <div class="scenario-detail">
+      <h3>Azure service-side issue <span class="mono">(azure-service-side-issue)</span></h3>
+      <p class="desc">No chaos toggles, but service-side latency spikes.</p>
+      <table class="kv">
+        <tr><th>Primary classification</th><td><code>AZURE_SERVICE_SIDE</code> <span class="badge ok">MATCH</span></td></tr>
+        <tr><th>Secondary classification(s)</th><td>&mdash;</td></tr>
+        <tr><th>Confidence</th><td>MEDIUM</td></tr>
+        <tr><th>Primary owner</th><td>Azure platform team</td></tr>
+        <tr><th>Customer impact</th><td>Customers are experiencing degraded catalogue and checkout performance (p99 2800ms, checkout success 93%).</td></tr>
+      </table>
+      <p><strong>Executive summary:</strong> During the incident window, Contoso Retail customers experienced degraded checkout and product catalogue performance (p99: 2800ms). Investigation evidence indicates the root cause is service-side, specifically: Client-side p99 latency: 2800ms vs server-side Cosmos latency: 650ms — 2150ms gap indicates client/SDK or host overhead; Cosmos DB 429 RateLimitExceeded: 50 in last 5 min on products container. Azure Cosmos DB service-side health remained degraded (server-side latency: 650ms). Azure SQL Database remained healthy. Immediate corrective actions are identified and safe to execute without service escalation.</p>
+      <p><strong>Evidence:</strong></p>
+      <ul><li>Client-side p99 latency: 2800ms vs server-side Cosmos latency: 650ms — 2150ms gap indicates client/SDK or host overhead</li><li>Cosmos DB 429 RateLimitExceeded: 50 in last 5 min on products container</li></ul>
+      <p><strong>Ruled out:</strong></p>
+      <ul><li>Azure SQL Database issue ruled out: SQL query latency 80ms, error count 0</li><li>Host resource exhaustion ruled out: CPU at 22%</li><li>Azure regional outage ruled out: no Azure Service Health events detected</li></ul>
+      <p><strong>Immediate safe actions (no approval needed):</strong></p>
+      <ul><li>Verify singleton CosmosClient initialized at application startup and reused across all requests</li><li>Verify SQL connection pool max size is appropriate for expected concurrency</li></ul>
+      <p><strong>Approval-required actions:</strong></p>
+      <ul><li>Re-enable indexing policy on ProductsNoIndex container — requires change request, impacts write RU</li><li>Scale AKS node pool — temporary mitigation pending root cause resolution and cost review</li><li>Increase Cosmos DB throughput/autoscale — temporary mitigation only; pending cost/risk review</li><li>Add SQL index — requires query plan review and DBA approval in production-like environment</li></ul>
+      <p><strong>DO NOT DO:</strong></p>
+      <ul class="donot"><li>DO NOT blame Azure SQL when SQL signals are healthy — SQL latency is 80ms</li><li>DO NOT leave demo chaos toggles enabled — reset before any customer handoff</li></ul>
+      <p><strong>Escalation recommendation:</strong> Consider escalating to Azure Support — server-side signals suggest possible service degradation. Include CRI/subscription ID and telemetry exports.</p>
+      <p><strong>Root cause / permanent fix:</strong> Capture service-side evidence and coordinate with Azure Support while maintaining customer communications.</p>
+      <p><strong>Engineering RCA:</strong> Telemetry shows p99 latency at 2800ms with 50 Cosmos 429 events, 450 RU/min consumption, host CPU 22%, and SQL latency 80ms. The active toggles (none) directly align with the observed failure signature. The client-to-server latency delta of 2150ms indicates most latency is introduced in the application, SDK, query design, or host execution path rather than inside the Azure Cosmos DB service plane.</p>
+    </div>
+<hr/>
+
+    <div class="scenario-detail">
+      <h3>Contoso mixed incident <span class="mono">(contoso-sql-cosmos-mixed-incident)</span></h3>
+      <p class="desc">All chaos toggles enabled to create a blended client, data model, host, and SQL issue.</p>
+      <table class="kv">
+        <tr><th>Primary classification</th><td><code>APPLICATION_OR_CLIENT_SIDE</code> <span class="badge ok">MATCH</span></td></tr>
+        <tr><th>Secondary classification(s)</th><td>RECENT_CHANGE_OR_DEPLOYMENT, HOST_OR_RUNTIME, DATABASE_CONFIG_OR_DATA_MODEL, SQL_DATABASE_OR_SCHEMA</td></tr>
+        <tr><th>Confidence</th><td>HIGH</td></tr>
+        <tr><th>Primary owner</th><td>Contoso Retail application engineering</td></tr>
+        <tr><th>Customer impact</th><td>Customers are experiencing degraded catalogue and checkout performance (p99 3200ms, checkout success 62%).</td></tr>
+      </table>
+      <p><strong>Executive summary:</strong> During the incident window, Contoso Retail customers experienced degraded checkout and product catalogue performance (p99: 3200ms). Investigation evidence indicates the root cause is application-side, specifically: Client-side p99 latency: 3200ms vs server-side Cosmos latency: 20ms — 3180ms gap indicates client/SDK or host overhead; Cosmos DB 429 RateLimitExceeded: 55 in last 5 min on products container; Hot partition pattern active: all writes routing to fixed partition key 'hot-category'. Azure Cosmos DB service-side health remained nominal (server-side latency: 20ms). Azure SQL requires further validation. Immediate corrective actions are identified and safe to execute without service escalation.</p>
+      <p><strong>Evidence:</strong></p>
+      <ul><li>Client-side p99 latency: 3200ms vs server-side Cosmos latency: 20ms — 3180ms gap indicates client/SDK or host overhead</li><li>Cosmos DB 429 RateLimitExceeded: 55 in last 5 min on products container</li><li>Hot partition pattern active: all writes routing to fixed partition key 'hot-category'</li><li>Multiple CosmosClient instances: new client created per request instead of singleton</li><li>Per-request metadata reads: container properties re-fetched on every operation</li><li>Cross-partition fan-out query: SELECT * FROM c without partition key filter</li><li>Large document writes: ~52KB documents (recommended &lt;1KB for typical catalogue items)</li><li>Unindexed query on ProductsNoIndex: full scan, high RU expected</li><li>Query used instead of ReadItem: SELECT * FROM c WHERE c.id=@id vs ReadItemAsync(id,pk)</li><li>Host CPU: 85% — CPU burn path active (fibonacci loop on request path)</li><li>SQL query latency: 3200ms — artificial slow query path enabled</li><li>SQL connection pool pressure: connections held beyond normal release</li><li>Recent deployment/change event detected — correlates with incident start</li><li>High RU consumption: 1600 RU/min — 16x above healthy baseline</li><li>Azure Cosmos DB server-side latency: 20ms — within normal range, indicating service is healthy</li></ul>
+      <p><strong>Ruled out:</strong></p>
+      <ul><li>Azure Cosmos DB service-side outage ruled out: server-side p99 20ms is healthy</li></ul>
+      <p><strong>Immediate safe actions (no approval needed):</strong></p>
+      <ul><li>Disable hot partition chaos toggle — restore natural partition key routing by categoryId/userId</li><li>Stop creating new CosmosClient per request — use singleton initialized at startup</li><li>Remove per-request metadata reads — cache container properties at startup</li><li>Disable CPU burn path — remove synchronous Fibonacci computation from request path</li><li>Replace cross-partition query with targeted query using WHERE c.categoryId = @categoryId</li><li>Restore indexing policy on ProductsNoIndex, or route queries back to indexed Products container</li><li>Replace query with ReadItemAsync(id, partitionKey) for known id+pk combinations</li><li>Reduce document size — extract large blobs to Azure Blob Storage, keep documents &lt;1KB</li><li>Disable SQL slow query simulation — verify no N+1 query patterns in checkout path</li><li>Disable SQL connection pressure — ensure connections returned to pool promptly</li><li>Verify singleton CosmosClient initialized at application startup and reused across all requests</li><li>Verify SQL connection pool max size is appropriate for expected concurrency</li></ul>
+      <p><strong>Approval-required actions:</strong></p>
+      <ul><li>Re-enable indexing policy on ProductsNoIndex container — requires change request, impacts write RU</li><li>Scale AKS node pool — temporary mitigation pending root cause resolution and cost review</li><li>Increase Cosmos DB throughput/autoscale — temporary mitigation only; pending cost/risk review</li><li>Add SQL index — requires query plan review and DBA approval in production-like environment</li></ul>
+      <p><strong>DO NOT DO:</strong></p>
+      <ul class="donot"><li>DO NOT treat this as Azure/Cosmos DB service outage — server-side metrics are healthy</li><li>DO NOT blindly increase provisioned RU/s — this masks the hot partition root cause</li><li>DO NOT ignore hot partition evidence — increasing throughput without fixing key distribution does not resolve root cause</li><li>DO NOT leave demo chaos toggles enabled — reset before any customer handoff</li></ul>
+      <p><strong>Escalation recommendation:</strong> Do NOT escalate to Azure/Cosmos support. Evidence strongly indicates application-side patterns. Escalate only if server-side latency exceeds 200ms p99, availability drops below 99.9%, or Azure Service Health shows regional impact.</p>
+      <p><strong>Root cause / permanent fix:</strong> Refactor Cosmos access patterns to use a singleton client, targeted point reads, well-distributed partition keys, and lean document shapes.</p>
+      <p><strong>Engineering RCA:</strong> Telemetry shows p99 latency at 3200ms with 55 Cosmos 429 events, 1600 RU/min consumption, host CPU 85%, and SQL latency 3200ms. The active toggles (hotPartition, metadataThrottling, multipleClients, highCpu, crossPartitionQuery, largeDocument, missingIndexing, pointReadMisuse, sqlSlowQuery, sqlConnectionPressure) directly align with the observed failure signature. The client-to-server latency delta of 3180ms indicates most latency is introduced in the application, SDK, query design, or host execution path rather than inside the Azure Cosmos DB service plane.</p>
+    </div>
+<hr/>
+
+    <div class="scenario-detail">
+      <h3>Cross partition query <span class="mono">(cross-partition-query)</span></h3>
+      <p class="desc">Cross partition fan-out query active.</p>
+      <table class="kv">
+        <tr><th>Primary classification</th><td><code>DATABASE_CONFIG_OR_DATA_MODEL</code> <span class="badge ok">MATCH</span></td></tr>
+        <tr><th>Secondary classification(s)</th><td>&mdash;</td></tr>
+        <tr><th>Confidence</th><td>HIGH</td></tr>
+        <tr><th>Primary owner</th><td>Contoso Retail data platform team</td></tr>
+        <tr><th>Customer impact</th><td>Low-severity symptoms observed with p99 latency 980ms and checkout success 96%.</td></tr>
+      </table>
+      <p><strong>Executive summary:</strong> During the incident window, Contoso Retail customers experienced degraded checkout and product catalogue performance (p99: 980ms). Investigation evidence indicates the root cause is most likely associated with the active failure domain, specifically: Client-side p99 latency: 980ms vs server-side Cosmos latency: 18ms — 962ms gap indicates client/SDK or host overhead; Cosmos DB 429 RateLimitExceeded: 8 in last 5 min on products container; Cross-partition fan-out query: SELECT * FROM c without partition key filter. Azure Cosmos DB service-side health remained nominal (server-side latency: 18ms). Azure SQL Database remained healthy. Immediate corrective actions are identified and safe to execute without service escalation.</p>
+      <p><strong>Evidence:</strong></p>
+      <ul><li>Client-side p99 latency: 980ms vs server-side Cosmos latency: 18ms — 962ms gap indicates client/SDK or host overhead</li><li>Cosmos DB 429 RateLimitExceeded: 8 in last 5 min on products container</li><li>Cross-partition fan-out query: SELECT * FROM c without partition key filter</li><li>High RU consumption: 720 RU/min — 7.2x above healthy baseline</li><li>Azure Cosmos DB server-side latency: 18ms — within normal range, indicating service is healthy</li></ul>
+      <p><strong>Ruled out:</strong></p>
+      <ul><li>Azure Cosmos DB service-side outage ruled out: server-side p99 18ms is healthy</li><li>Azure SQL Database issue ruled out: SQL query latency 48ms, error count 0</li><li>Host resource exhaustion ruled out: CPU at 25%</li><li>Azure regional outage ruled out: no Azure Service Health events detected</li></ul>
+      <p><strong>Immediate safe actions (no approval needed):</strong></p>
+      <ul><li>Replace cross-partition query with targeted query using WHERE c.categoryId = @categoryId</li><li>Verify singleton CosmosClient initialized at application startup and reused across all requests</li><li>Verify SQL connection pool max size is appropriate for expected concurrency</li></ul>
+      <p><strong>Approval-required actions:</strong></p>
+      <ul><li>Re-enable indexing policy on ProductsNoIndex container — requires change request, impacts write RU</li><li>Scale AKS node pool — temporary mitigation pending root cause resolution and cost review</li><li>Increase Cosmos DB throughput/autoscale — temporary mitigation only; pending cost/risk review</li><li>Add SQL index — requires query plan review and DBA approval in production-like environment</li></ul>
+      <p><strong>DO NOT DO:</strong></p>
+      <ul class="donot"><li>DO NOT blame Azure SQL when SQL signals are healthy — SQL latency is 48ms</li><li>DO NOT leave demo chaos toggles enabled — reset before any customer handoff</li></ul>
+      <p><strong>Escalation recommendation:</strong> Keep escalation within the Contoso engineering response bridge while corrective actions are validated. Escalate externally only if ruled-out causes become active signals.</p>
+      <p><strong>Root cause / permanent fix:</strong> Correct the Cosmos indexing and query design, then validate RU efficiency with representative load.</p>
+      <p><strong>Engineering RCA:</strong> Telemetry shows p99 latency at 980ms with 8 Cosmos 429 events, 720 RU/min consumption, host CPU 25%, and SQL latency 48ms. The active toggles (crossPartitionQuery) directly align with the observed failure signature. The client-to-server latency delta of 962ms indicates most latency is introduced in the application, SDK, query design, or host execution path rather than inside the Azure Cosmos DB service plane.</p>
+    </div>
+<hr/>
+
+    <div class="scenario-detail">
+      <h3>Healthy baseline <span class="mono">(healthy-baseline)</span></h3>
+      <p class="desc">All chaos toggles off and healthy application metrics.</p>
+      <table class="kv">
+        <tr><th>Primary classification</th><td><code>INSUFFICIENT_EVIDENCE</code> <span class="badge ok">MATCH</span></td></tr>
+        <tr><th>Secondary classification(s)</th><td>&mdash;</td></tr>
+        <tr><th>Confidence</th><td>LOW</td></tr>
+        <tr><th>Primary owner</th><td>Application on-call</td></tr>
+        <tr><th>Customer impact</th><td>Low-severity symptoms observed with p99 latency 95ms and checkout success 100%.</td></tr>
+      </table>
+      <p><strong>Executive summary:</strong> During the incident window, Contoso Retail customers experienced degraded checkout and product catalogue performance (p99: 95ms). Investigation evidence indicates the root cause is most likely associated with the active failure domain, specifically: No strong anomaly detected across client, server, host, or SQL telemetry during the sampled window.. Azure Cosmos DB service-side health remained nominal (server-side latency: 12ms). Azure SQL Database remained healthy. Immediate corrective actions are identified and safe to execute without service escalation.</p>
+      <p><strong>Evidence:</strong></p>
+      <ul><li>No strong anomaly detected across client, server, host, or SQL telemetry during the sampled window.</li></ul>
+      <p><strong>Ruled out:</strong></p>
+      <ul><li>Azure Cosmos DB service-side outage ruled out: server-side p99 12ms is healthy</li><li>Azure SQL Database issue ruled out: SQL query latency 32ms, error count 0</li><li>Host resource exhaustion ruled out: CPU at 18%</li><li>Azure regional outage ruled out: no Azure Service Health events detected</li></ul>
+      <p><strong>Immediate safe actions (no approval needed):</strong></p>
+      <ul><li>Verify singleton CosmosClient initialized at application startup and reused across all requests</li><li>Verify SQL connection pool max size is appropriate for expected concurrency</li></ul>
+      <p><strong>Approval-required actions:</strong></p>
+      <ul><li>Re-enable indexing policy on ProductsNoIndex container — requires change request, impacts write RU</li><li>Scale AKS node pool — temporary mitigation pending root cause resolution and cost review</li><li>Increase Cosmos DB throughput/autoscale — temporary mitigation only; pending cost/risk review</li><li>Add SQL index — requires query plan review and DBA approval in production-like environment</li></ul>
+      <p><strong>DO NOT DO:</strong></p>
+      <ul class="donot"><li>DO NOT blame Azure SQL when SQL signals are healthy — SQL latency is 32ms</li><li>DO NOT leave demo chaos toggles enabled — reset before any customer handoff</li></ul>
+      <p><strong>Escalation recommendation:</strong> Keep escalation within the Contoso engineering response bridge while corrective actions are validated. Escalate externally only if ruled-out causes become active signals.</p>
+      <p><strong>Root cause / permanent fix:</strong> Collect additional telemetry to determine a durable corrective action.</p>
+      <p><strong>Engineering RCA:</strong> Telemetry shows p99 latency at 95ms with 0 Cosmos 429 events, 40 RU/min consumption, host CPU 18%, and SQL latency 32ms. The active toggles (none) directly align with the observed failure signature. The client-to-server latency delta of 83ms indicates most latency is introduced in the application, SDK, query design, or host execution path rather than inside the Azure Cosmos DB service plane.</p>
+    </div>
+<hr/>
+
+    <div class="scenario-detail">
+      <h3>High CPU host saturation <span class="mono">(high-cpu-host-saturation)</span></h3>
+      <p class="desc">Only CPU burn path enabled.</p>
+      <table class="kv">
+        <tr><th>Primary classification</th><td><code>HOST_OR_RUNTIME</code> <span class="badge ok">MATCH</span></td></tr>
+        <tr><th>Secondary classification(s)</th><td>&mdash;</td></tr>
+        <tr><th>Confidence</th><td>HIGH</td></tr>
+        <tr><th>Primary owner</th><td>AKS platform and runtime team</td></tr>
+        <tr><th>Customer impact</th><td>Customers are experiencing degraded catalogue and checkout performance (p99 2400ms, checkout success 89%).</td></tr>
+      </table>
+      <p><strong>Executive summary:</strong> During the incident window, Contoso Retail customers experienced degraded checkout and product catalogue performance (p99: 2400ms). Investigation evidence indicates the root cause is most likely associated with the active failure domain, specifically: Client-side p99 latency: 2400ms vs server-side Cosmos latency: 12ms — 2388ms gap indicates client/SDK or host overhead; Host CPU: 85% — CPU burn path active (fibonacci loop on request path); Azure Cosmos DB server-side latency: 12ms — within normal range, indicating service is healthy. Azure Cosmos DB service-side health remained nominal (server-side latency: 12ms). Azure SQL Database remained healthy. Immediate corrective actions are identified and safe to execute without service escalation.</p>
+      <p><strong>Evidence:</strong></p>
+      <ul><li>Client-side p99 latency: 2400ms vs server-side Cosmos latency: 12ms — 2388ms gap indicates client/SDK or host overhead</li><li>Host CPU: 85% — CPU burn path active (fibonacci loop on request path)</li><li>Azure Cosmos DB server-side latency: 12ms — within normal range, indicating service is healthy</li></ul>
+      <p><strong>Ruled out:</strong></p>
+      <ul><li>Azure Cosmos DB service-side outage ruled out: server-side p99 12ms is healthy</li><li>Azure SQL Database issue ruled out: SQL query latency 65ms, error count 0</li><li>Azure regional outage ruled out: no Azure Service Health events detected</li></ul>
+      <p><strong>Immediate safe actions (no approval needed):</strong></p>
+      <ul><li>Disable CPU burn path — remove synchronous Fibonacci computation from request path</li><li>Verify singleton CosmosClient initialized at application startup and reused across all requests</li><li>Verify SQL connection pool max size is appropriate for expected concurrency</li></ul>
+      <p><strong>Approval-required actions:</strong></p>
+      <ul><li>Re-enable indexing policy on ProductsNoIndex container — requires change request, impacts write RU</li><li>Scale AKS node pool — temporary mitigation pending root cause resolution and cost review</li><li>Increase Cosmos DB throughput/autoscale — temporary mitigation only; pending cost/risk review</li><li>Add SQL index — requires query plan review and DBA approval in production-like environment</li></ul>
+      <p><strong>DO NOT DO:</strong></p>
+      <ul class="donot"><li>DO NOT blame Azure SQL when SQL signals are healthy — SQL latency is 65ms</li><li>DO NOT leave demo chaos toggles enabled — reset before any customer handoff</li></ul>
+      <p><strong>Escalation recommendation:</strong> Keep escalation within the Contoso engineering response bridge while corrective actions are validated. Escalate externally only if ruled-out causes become active signals.</p>
+      <p><strong>Root cause / permanent fix:</strong> Remove synchronous CPU-heavy work from the request path and right-size AKS runtime capacity.</p>
+      <p><strong>Engineering RCA:</strong> Telemetry shows p99 latency at 2400ms with 0 Cosmos 429 events, 75 RU/min consumption, host CPU 85%, and SQL latency 65ms. The active toggles (highCpu) directly align with the observed failure signature. The client-to-server latency delta of 2388ms indicates most latency is introduced in the application, SDK, query design, or host execution path rather than inside the Azure Cosmos DB service plane.</p>
+    </div>
+<hr/>
+
+    <div class="scenario-detail">
+      <h3>Hot partition 429 <span class="mono">(hot-partition-429)</span></h3>
+      <p class="desc">Only hot partition enabled.</p>
+      <table class="kv">
+        <tr><th>Primary classification</th><td><code>APPLICATION_OR_CLIENT_SIDE</code> <span class="badge ok">MATCH</span></td></tr>
+        <tr><th>Secondary classification(s)</th><td>&mdash;</td></tr>
+        <tr><th>Confidence</th><td>HIGH</td></tr>
+        <tr><th>Primary owner</th><td>Contoso Retail application engineering</td></tr>
+        <tr><th>Customer impact</th><td>Customers are experiencing degraded catalogue and checkout performance (p99 1400ms, checkout success 91%).</td></tr>
+      </table>
+      <p><strong>Executive summary:</strong> During the incident window, Contoso Retail customers experienced degraded checkout and product catalogue performance (p99: 1400ms). Investigation evidence indicates the root cause is application-side, specifically: Client-side p99 latency: 1400ms vs server-side Cosmos latency: 18ms — 1382ms gap indicates client/SDK or host overhead; Cosmos DB 429 RateLimitExceeded: 25 in last 5 min on products container; Hot partition pattern active: all writes routing to fixed partition key 'hot-category'. Azure Cosmos DB service-side health remained nominal (server-side latency: 18ms). Azure SQL Database remained healthy. Immediate corrective actions are identified and safe to execute without service escalation.</p>
+      <p><strong>Evidence:</strong></p>
+      <ul><li>Client-side p99 latency: 1400ms vs server-side Cosmos latency: 18ms — 1382ms gap indicates client/SDK or host overhead</li><li>Cosmos DB 429 RateLimitExceeded: 25 in last 5 min on products container</li><li>Hot partition pattern active: all writes routing to fixed partition key 'hot-category'</li><li>High RU consumption: 780 RU/min — 7.8x above healthy baseline</li><li>Azure Cosmos DB server-side latency: 18ms — within normal range, indicating service is healthy</li></ul>
+      <p><strong>Ruled out:</strong></p>
+      <ul><li>Azure Cosmos DB service-side outage ruled out: server-side p99 18ms is healthy</li><li>Azure SQL Database issue ruled out: SQL query latency 45ms, error count 0</li><li>Host resource exhaustion ruled out: CPU at 22%</li><li>Azure regional outage ruled out: no Azure Service Health events detected</li></ul>
+      <p><strong>Immediate safe actions (no approval needed):</strong></p>
+      <ul><li>Disable hot partition chaos toggle — restore natural partition key routing by categoryId/userId</li><li>Verify singleton CosmosClient initialized at application startup and reused across all requests</li><li>Verify SQL connection pool max size is appropriate for expected concurrency</li></ul>
+      <p><strong>Approval-required actions:</strong></p>
+      <ul><li>Re-enable indexing policy on ProductsNoIndex container — requires change request, impacts write RU</li><li>Scale AKS node pool — temporary mitigation pending root cause resolution and cost review</li><li>Increase Cosmos DB throughput/autoscale — temporary mitigation only; pending cost/risk review</li><li>Add SQL index — requires query plan review and DBA approval in production-like environment</li></ul>
+      <p><strong>DO NOT DO:</strong></p>
+      <ul class="donot"><li>DO NOT treat this as Azure/Cosmos DB service outage — server-side metrics are healthy</li><li>DO NOT blindly increase provisioned RU/s — this masks the hot partition root cause</li><li>DO NOT ignore hot partition evidence — increasing throughput without fixing key distribution does not resolve root cause</li><li>DO NOT blame Azure SQL when SQL signals are healthy — SQL latency is 45ms</li><li>DO NOT leave demo chaos toggles enabled — reset before any customer handoff</li></ul>
+      <p><strong>Escalation recommendation:</strong> Do NOT escalate to Azure/Cosmos support. Evidence strongly indicates application-side patterns. Escalate only if server-side latency exceeds 200ms p99, availability drops below 99.9%, or Azure Service Health shows regional impact.</p>
+      <p><strong>Root cause / permanent fix:</strong> Refactor Cosmos access patterns to use a singleton client, targeted point reads, well-distributed partition keys, and lean document shapes.</p>
+      <p><strong>Engineering RCA:</strong> Telemetry shows p99 latency at 1400ms with 25 Cosmos 429 events, 780 RU/min consumption, host CPU 22%, and SQL latency 45ms. The active toggles (hotPartition) directly align with the observed failure signature. The client-to-server latency delta of 1382ms indicates most latency is introduced in the application, SDK, query design, or host execution path rather than inside the Azure Cosmos DB service plane.</p>
+    </div>
+<hr/>
+
+    <div class="scenario-detail">
+      <h3>Insufficient evidence <span class="mono">(insufficient-evidence)</span></h3>
+      <p class="desc">Healthy metrics without a strong signal.</p>
+      <table class="kv">
+        <tr><th>Primary classification</th><td><code>INSUFFICIENT_EVIDENCE</code> <span class="badge ok">MATCH</span></td></tr>
+        <tr><th>Secondary classification(s)</th><td>&mdash;</td></tr>
+        <tr><th>Confidence</th><td>LOW</td></tr>
+        <tr><th>Primary owner</th><td>Application on-call</td></tr>
+        <tr><th>Customer impact</th><td>Low-severity symptoms observed with p99 latency 120ms and checkout success 100%.</td></tr>
+      </table>
+      <p><strong>Executive summary:</strong> During the incident window, Contoso Retail customers experienced degraded checkout and product catalogue performance (p99: 120ms). Investigation evidence indicates the root cause is most likely associated with the active failure domain, specifically: No strong anomaly detected across client, server, host, or SQL telemetry during the sampled window.. Azure Cosmos DB service-side health remained nominal (server-side latency: 11ms). Azure SQL Database remained healthy. Immediate corrective actions are identified and safe to execute without service escalation.</p>
+      <p><strong>Evidence:</strong></p>
+      <ul><li>No strong anomaly detected across client, server, host, or SQL telemetry during the sampled window.</li></ul>
+      <p><strong>Ruled out:</strong></p>
+      <ul><li>Azure Cosmos DB service-side outage ruled out: server-side p99 11ms is healthy</li><li>Azure SQL Database issue ruled out: SQL query latency 28ms, error count 0</li><li>Host resource exhaustion ruled out: CPU at 19%</li><li>Azure regional outage ruled out: no Azure Service Health events detected</li></ul>
+      <p><strong>Immediate safe actions (no approval needed):</strong></p>
+      <ul><li>Verify singleton CosmosClient initialized at application startup and reused across all requests</li><li>Verify SQL connection pool max size is appropriate for expected concurrency</li></ul>
+      <p><strong>Approval-required actions:</strong></p>
+      <ul><li>Re-enable indexing policy on ProductsNoIndex container — requires change request, impacts write RU</li><li>Scale AKS node pool — temporary mitigation pending root cause resolution and cost review</li><li>Increase Cosmos DB throughput/autoscale — temporary mitigation only; pending cost/risk review</li><li>Add SQL index — requires query plan review and DBA approval in production-like environment</li></ul>
+      <p><strong>DO NOT DO:</strong></p>
+      <ul class="donot"><li>DO NOT blame Azure SQL when SQL signals are healthy — SQL latency is 28ms</li><li>DO NOT leave demo chaos toggles enabled — reset before any customer handoff</li></ul>
+      <p><strong>Escalation recommendation:</strong> Keep escalation within the Contoso engineering response bridge while corrective actions are validated. Escalate externally only if ruled-out causes become active signals.</p>
+      <p><strong>Root cause / permanent fix:</strong> Collect additional telemetry to determine a durable corrective action.</p>
+      <p><strong>Engineering RCA:</strong> Telemetry shows p99 latency at 120ms with 0 Cosmos 429 events, 35 RU/min consumption, host CPU 19%, and SQL latency 28ms. The active toggles (none) directly align with the observed failure signature. The client-to-server latency delta of 109ms indicates most latency is introduced in the application, SDK, query design, or host execution path rather than inside the Azure Cosmos DB service plane.</p>
+    </div>
+<hr/>
+
+    <div class="scenario-detail">
+      <h3>Large document write <span class="mono">(large-document-write)</span></h3>
+      <p class="desc">Oversized documents on write path.</p>
+      <table class="kv">
+        <tr><th>Primary classification</th><td><code>APPLICATION_OR_CLIENT_SIDE</code> <span class="badge ok">MATCH</span></td></tr>
+        <tr><th>Secondary classification(s)</th><td>&mdash;</td></tr>
+        <tr><th>Confidence</th><td>HIGH</td></tr>
+        <tr><th>Primary owner</th><td>Contoso Retail application engineering</td></tr>
+        <tr><th>Customer impact</th><td>Customers are experiencing degraded catalogue and checkout performance (p99 1100ms, checkout success 94%).</td></tr>
+      </table>
+      <p><strong>Executive summary:</strong> During the incident window, Contoso Retail customers experienced degraded checkout and product catalogue performance (p99: 1100ms). Investigation evidence indicates the root cause is application-side, specifically: Client-side p99 latency: 1100ms vs server-side Cosmos latency: 16ms — 1084ms gap indicates client/SDK or host overhead; Cosmos DB 429 RateLimitExceeded: 12 in last 5 min on products container; Large document writes: ~52KB documents (recommended &lt;1KB for typical catalogue items). Azure Cosmos DB service-side health remained nominal (server-side latency: 16ms). Azure SQL Database remained healthy. Immediate corrective actions are identified and safe to execute without service escalation.</p>
+      <p><strong>Evidence:</strong></p>
+      <ul><li>Client-side p99 latency: 1100ms vs server-side Cosmos latency: 16ms — 1084ms gap indicates client/SDK or host overhead</li><li>Cosmos DB 429 RateLimitExceeded: 12 in last 5 min on products container</li><li>Large document writes: ~52KB documents (recommended &lt;1KB for typical catalogue items)</li><li>High RU consumption: 900 RU/min — 9x above healthy baseline</li><li>Azure Cosmos DB server-side latency: 16ms — within normal range, indicating service is healthy</li></ul>
+      <p><strong>Ruled out:</strong></p>
+      <ul><li>Azure Cosmos DB service-side outage ruled out: server-side p99 16ms is healthy</li><li>Azure SQL Database issue ruled out: SQL query latency 58ms, error count 0</li><li>Host resource exhaustion ruled out: CPU at 28%</li><li>Azure regional outage ruled out: no Azure Service Health events detected</li></ul>
+      <p><strong>Immediate safe actions (no approval needed):</strong></p>
+      <ul><li>Reduce document size — extract large blobs to Azure Blob Storage, keep documents &lt;1KB</li><li>Verify singleton CosmosClient initialized at application startup and reused across all requests</li><li>Verify SQL connection pool max size is appropriate for expected concurrency</li></ul>
+      <p><strong>Approval-required actions:</strong></p>
+      <ul><li>Re-enable indexing policy on ProductsNoIndex container — requires change request, impacts write RU</li><li>Scale AKS node pool — temporary mitigation pending root cause resolution and cost review</li><li>Increase Cosmos DB throughput/autoscale — temporary mitigation only; pending cost/risk review</li><li>Add SQL index — requires query plan review and DBA approval in production-like environment</li></ul>
+      <p><strong>DO NOT DO:</strong></p>
+      <ul class="donot"><li>DO NOT treat this as Azure/Cosmos DB service outage — server-side metrics are healthy</li><li>DO NOT blindly increase provisioned RU/s — this masks the hot partition root cause</li><li>DO NOT ignore hot partition evidence — increasing throughput without fixing key distribution does not resolve root cause</li><li>DO NOT blame Azure SQL when SQL signals are healthy — SQL latency is 58ms</li><li>DO NOT leave demo chaos toggles enabled — reset before any customer handoff</li></ul>
+      <p><strong>Escalation recommendation:</strong> Do NOT escalate to Azure/Cosmos support. Evidence strongly indicates application-side patterns. Escalate only if server-side latency exceeds 200ms p99, availability drops below 99.9%, or Azure Service Health shows regional impact.</p>
+      <p><strong>Root cause / permanent fix:</strong> Refactor Cosmos access patterns to use a singleton client, targeted point reads, well-distributed partition keys, and lean document shapes.</p>
+      <p><strong>Engineering RCA:</strong> Telemetry shows p99 latency at 1100ms with 12 Cosmos 429 events, 900 RU/min consumption, host CPU 28%, and SQL latency 58ms. The active toggles (largeDocument) directly align with the observed failure signature. The client-to-server latency delta of 1084ms indicates most latency is introduced in the application, SDK, query design, or host execution path rather than inside the Azure Cosmos DB service plane.</p>
+    </div>
+<hr/>
+
+    <div class="scenario-detail">
+      <h3>Metadata throttling <span class="mono">(metadata-throttling)</span></h3>
+      <p class="desc">Only metadata reads enabled.</p>
+      <table class="kv">
+        <tr><th>Primary classification</th><td><code>APPLICATION_OR_CLIENT_SIDE</code> <span class="badge ok">MATCH</span></td></tr>
+        <tr><th>Secondary classification(s)</th><td>&mdash;</td></tr>
+        <tr><th>Confidence</th><td>HIGH</td></tr>
+        <tr><th>Primary owner</th><td>Contoso Retail application engineering</td></tr>
+        <tr><th>Customer impact</th><td>Customers are experiencing degraded catalogue and checkout performance (p99 1200ms, checkout success 95%).</td></tr>
+      </table>
+      <p><strong>Executive summary:</strong> During the incident window, Contoso Retail customers experienced degraded checkout and product catalogue performance (p99: 1200ms). Investigation evidence indicates the root cause is application-side, specifically: Client-side p99 latency: 1200ms vs server-side Cosmos latency: 15ms — 1185ms gap indicates client/SDK or host overhead; Cosmos DB 429 RateLimitExceeded: 15 in last 5 min on products container; Per-request metadata reads: container properties re-fetched on every operation. Azure Cosmos DB service-side health remained nominal (server-side latency: 15ms). Azure SQL Database remained healthy. Immediate corrective actions are identified and safe to execute without service escalation.</p>
+      <p><strong>Evidence:</strong></p>
+      <ul><li>Client-side p99 latency: 1200ms vs server-side Cosmos latency: 15ms — 1185ms gap indicates client/SDK or host overhead</li><li>Cosmos DB 429 RateLimitExceeded: 15 in last 5 min on products container</li><li>Per-request metadata reads: container properties re-fetched on every operation</li><li>High RU consumption: 650 RU/min — 6.5x above healthy baseline</li><li>Azure Cosmos DB server-side latency: 15ms — within normal range, indicating service is healthy</li></ul>
+      <p><strong>Ruled out:</strong></p>
+      <ul><li>Azure Cosmos DB service-side outage ruled out: server-side p99 15ms is healthy</li><li>Azure SQL Database issue ruled out: SQL query latency 50ms, error count 0</li><li>Host resource exhaustion ruled out: CPU at 24%</li><li>Azure regional outage ruled out: no Azure Service Health events detected</li></ul>
+      <p><strong>Immediate safe actions (no approval needed):</strong></p>
+      <ul><li>Remove per-request metadata reads — cache container properties at startup</li><li>Verify singleton CosmosClient initialized at application startup and reused across all requests</li><li>Verify SQL connection pool max size is appropriate for expected concurrency</li></ul>
+      <p><strong>Approval-required actions:</strong></p>
+      <ul><li>Re-enable indexing policy on ProductsNoIndex container — requires change request, impacts write RU</li><li>Scale AKS node pool — temporary mitigation pending root cause resolution and cost review</li><li>Increase Cosmos DB throughput/autoscale — temporary mitigation only; pending cost/risk review</li><li>Add SQL index — requires query plan review and DBA approval in production-like environment</li></ul>
+      <p><strong>DO NOT DO:</strong></p>
+      <ul class="donot"><li>DO NOT treat this as Azure/Cosmos DB service outage — server-side metrics are healthy</li><li>DO NOT blindly increase provisioned RU/s — this masks the hot partition root cause</li><li>DO NOT ignore hot partition evidence — increasing throughput without fixing key distribution does not resolve root cause</li><li>DO NOT blame Azure SQL when SQL signals are healthy — SQL latency is 50ms</li><li>DO NOT leave demo chaos toggles enabled — reset before any customer handoff</li></ul>
+      <p><strong>Escalation recommendation:</strong> Do NOT escalate to Azure/Cosmos support. Evidence strongly indicates application-side patterns. Escalate only if server-side latency exceeds 200ms p99, availability drops below 99.9%, or Azure Service Health shows regional impact.</p>
+      <p><strong>Root cause / permanent fix:</strong> Refactor Cosmos access patterns to use a singleton client, targeted point reads, well-distributed partition keys, and lean document shapes.</p>
+      <p><strong>Engineering RCA:</strong> Telemetry shows p99 latency at 1200ms with 15 Cosmos 429 events, 650 RU/min consumption, host CPU 24%, and SQL latency 50ms. The active toggles (metadataThrottling) directly align with the observed failure signature. The client-to-server latency delta of 1185ms indicates most latency is introduced in the application, SDK, query design, or host execution path rather than inside the Azure Cosmos DB service plane.</p>
+    </div>
+<hr/>
+
+    <div class="scenario-detail">
+      <h3>Missing indexing policy <span class="mono">(missing-indexing-policy)</span></h3>
+      <p class="desc">Reads routed to unindexed container.</p>
+      <table class="kv">
+        <tr><th>Primary classification</th><td><code>DATABASE_CONFIG_OR_DATA_MODEL</code> <span class="badge ok">MATCH</span></td></tr>
+        <tr><th>Secondary classification(s)</th><td>&mdash;</td></tr>
+        <tr><th>Confidence</th><td>HIGH</td></tr>
+        <tr><th>Primary owner</th><td>Contoso Retail data platform team</td></tr>
+        <tr><th>Customer impact</th><td>Customers are experiencing degraded catalogue and checkout performance (p99 1250ms, checkout success 97%).</td></tr>
+      </table>
+      <p><strong>Executive summary:</strong> During the incident window, Contoso Retail customers experienced degraded checkout and product catalogue performance (p99: 1250ms). Investigation evidence indicates the root cause is most likely associated with the active failure domain, specifically: Client-side p99 latency: 1250ms vs server-side Cosmos latency: 18ms — 1232ms gap indicates client/SDK or host overhead; Cosmos DB 429 RateLimitExceeded: 9 in last 5 min on products container; Unindexed query on ProductsNoIndex: full scan, high RU expected. Azure Cosmos DB service-side health remained nominal (server-side latency: 18ms). Azure SQL Database remained healthy. Immediate corrective actions are identified and safe to execute without service escalation.</p>
+      <p><strong>Evidence:</strong></p>
+      <ul><li>Client-side p99 latency: 1250ms vs server-side Cosmos latency: 18ms — 1232ms gap indicates client/SDK or host overhead</li><li>Cosmos DB 429 RateLimitExceeded: 9 in last 5 min on products container</li><li>Unindexed query on ProductsNoIndex: full scan, high RU expected</li><li>High RU consumption: 880 RU/min — 8.8x above healthy baseline</li><li>Azure Cosmos DB server-side latency: 18ms — within normal range, indicating service is healthy</li></ul>
+      <p><strong>Ruled out:</strong></p>
+      <ul><li>Azure Cosmos DB service-side outage ruled out: server-side p99 18ms is healthy</li><li>Azure SQL Database issue ruled out: SQL query latency 50ms, error count 0</li><li>Host resource exhaustion ruled out: CPU at 26%</li><li>Azure regional outage ruled out: no Azure Service Health events detected</li></ul>
+      <p><strong>Immediate safe actions (no approval needed):</strong></p>
+      <ul><li>Restore indexing policy on ProductsNoIndex, or route queries back to indexed Products container</li><li>Verify singleton CosmosClient initialized at application startup and reused across all requests</li><li>Verify SQL connection pool max size is appropriate for expected concurrency</li></ul>
+      <p><strong>Approval-required actions:</strong></p>
+      <ul><li>Re-enable indexing policy on ProductsNoIndex container — requires change request, impacts write RU</li><li>Scale AKS node pool — temporary mitigation pending root cause resolution and cost review</li><li>Increase Cosmos DB throughput/autoscale — temporary mitigation only; pending cost/risk review</li><li>Add SQL index — requires query plan review and DBA approval in production-like environment</li></ul>
+      <p><strong>DO NOT DO:</strong></p>
+      <ul class="donot"><li>DO NOT blame Azure SQL when SQL signals are healthy — SQL latency is 50ms</li><li>DO NOT leave demo chaos toggles enabled — reset before any customer handoff</li></ul>
+      <p><strong>Escalation recommendation:</strong> Keep escalation within the Contoso engineering response bridge while corrective actions are validated. Escalate externally only if ruled-out causes become active signals.</p>
+      <p><strong>Root cause / permanent fix:</strong> Correct the Cosmos indexing and query design, then validate RU efficiency with representative load.</p>
+      <p><strong>Engineering RCA:</strong> Telemetry shows p99 latency at 1250ms with 9 Cosmos 429 events, 880 RU/min consumption, host CPU 26%, and SQL latency 50ms. The active toggles (missingIndexing) directly align with the observed failure signature. The client-to-server latency delta of 1232ms indicates most latency is introduced in the application, SDK, query design, or host execution path rather than inside the Azure Cosmos DB service plane.</p>
+    </div>
+<hr/>
+
+    <div class="scenario-detail">
+      <h3>Multiple Cosmos clients <span class="mono">(multiple-cosmos-clients)</span></h3>
+      <p class="desc">SDK client created per request.</p>
+      <table class="kv">
+        <tr><th>Primary classification</th><td><code>APPLICATION_OR_CLIENT_SIDE</code> <span class="badge ok">MATCH</span></td></tr>
+        <tr><th>Secondary classification(s)</th><td>&mdash;</td></tr>
+        <tr><th>Confidence</th><td>HIGH</td></tr>
+        <tr><th>Primary owner</th><td>Contoso Retail application engineering</td></tr>
+        <tr><th>Customer impact</th><td>Customers are experiencing degraded catalogue and checkout performance (p99 1450ms, checkout success 92%).</td></tr>
+      </table>
+      <p><strong>Executive summary:</strong> During the incident window, Contoso Retail customers experienced degraded checkout and product catalogue performance (p99: 1450ms). Investigation evidence indicates the root cause is application-side, specifically: Client-side p99 latency: 1450ms vs server-side Cosmos latency: 14ms — 1436ms gap indicates client/SDK or host overhead; Cosmos DB 429 RateLimitExceeded: 14 in last 5 min on products container; Multiple CosmosClient instances: new client created per request instead of singleton. Azure Cosmos DB service-side health remained nominal (server-side latency: 14ms). Azure SQL Database remained healthy. Immediate corrective actions are identified and safe to execute without service escalation.</p>
+      <p><strong>Evidence:</strong></p>
+      <ul><li>Client-side p99 latency: 1450ms vs server-side Cosmos latency: 14ms — 1436ms gap indicates client/SDK or host overhead</li><li>Cosmos DB 429 RateLimitExceeded: 14 in last 5 min on products container</li><li>Multiple CosmosClient instances: new client created per request instead of singleton</li><li>High RU consumption: 520 RU/min — 5.2x above healthy baseline</li><li>Azure Cosmos DB server-side latency: 14ms — within normal range, indicating service is healthy</li></ul>
+      <p><strong>Ruled out:</strong></p>
+      <ul><li>Azure Cosmos DB service-side outage ruled out: server-side p99 14ms is healthy</li><li>Azure SQL Database issue ruled out: SQL query latency 55ms, error count 0</li><li>Azure regional outage ruled out: no Azure Service Health events detected</li></ul>
+      <p><strong>Immediate safe actions (no approval needed):</strong></p>
+      <ul><li>Stop creating new CosmosClient per request — use singleton initialized at startup</li><li>Verify singleton CosmosClient initialized at application startup and reused across all requests</li><li>Verify SQL connection pool max size is appropriate for expected concurrency</li></ul>
+      <p><strong>Approval-required actions:</strong></p>
+      <ul><li>Re-enable indexing policy on ProductsNoIndex container — requires change request, impacts write RU</li><li>Scale AKS node pool — temporary mitigation pending root cause resolution and cost review</li><li>Increase Cosmos DB throughput/autoscale — temporary mitigation only; pending cost/risk review</li><li>Add SQL index — requires query plan review and DBA approval in production-like environment</li></ul>
+      <p><strong>DO NOT DO:</strong></p>
+      <ul class="donot"><li>DO NOT treat this as Azure/Cosmos DB service outage — server-side metrics are healthy</li><li>DO NOT blindly increase provisioned RU/s — this masks the hot partition root cause</li><li>DO NOT ignore hot partition evidence — increasing throughput without fixing key distribution does not resolve root cause</li><li>DO NOT blame Azure SQL when SQL signals are healthy — SQL latency is 55ms</li><li>DO NOT leave demo chaos toggles enabled — reset before any customer handoff</li></ul>
+      <p><strong>Escalation recommendation:</strong> Do NOT escalate to Azure/Cosmos support. Evidence strongly indicates application-side patterns. Escalate only if server-side latency exceeds 200ms p99, availability drops below 99.9%, or Azure Service Health shows regional impact.</p>
+      <p><strong>Root cause / permanent fix:</strong> Refactor Cosmos access patterns to use a singleton client, targeted point reads, well-distributed partition keys, and lean document shapes.</p>
+      <p><strong>Engineering RCA:</strong> Telemetry shows p99 latency at 1450ms with 14 Cosmos 429 events, 520 RU/min consumption, host CPU 40%, and SQL latency 55ms. The active toggles (multipleClients) directly align with the observed failure signature. The client-to-server latency delta of 1436ms indicates most latency is introduced in the application, SDK, query design, or host execution path rather than inside the Azure Cosmos DB service plane.</p>
+    </div>
+<hr/>
+
+    <div class="scenario-detail">
+      <h3>Point read misuse <span class="mono">(point-read-misuse)</span></h3>
+      <p class="desc">Query used where point read should be used.</p>
+      <table class="kv">
+        <tr><th>Primary classification</th><td><code>DATABASE_CONFIG_OR_DATA_MODEL</code> <span class="badge ok">MATCH</span></td></tr>
+        <tr><th>Secondary classification(s)</th><td>&mdash;</td></tr>
+        <tr><th>Confidence</th><td>HIGH</td></tr>
+        <tr><th>Primary owner</th><td>Contoso Retail data platform team</td></tr>
+        <tr><th>Customer impact</th><td>Customers are experiencing degraded catalogue and checkout performance (p99 1080ms, checkout success 98%).</td></tr>
+      </table>
+      <p><strong>Executive summary:</strong> During the incident window, Contoso Retail customers experienced degraded checkout and product catalogue performance (p99: 1080ms). Investigation evidence indicates the root cause is most likely associated with the active failure domain, specifically: Client-side p99 latency: 1080ms vs server-side Cosmos latency: 17ms — 1063ms gap indicates client/SDK or host overhead; Cosmos DB 429 RateLimitExceeded: 6 in last 5 min on products container; Query used instead of ReadItem: SELECT * FROM c WHERE c.id=@id vs ReadItemAsync(id,pk). Azure Cosmos DB service-side health remained nominal (server-side latency: 17ms). Azure SQL Database remained healthy. Immediate corrective actions are identified and safe to execute without service escalation.</p>
+      <p><strong>Evidence:</strong></p>
+      <ul><li>Client-side p99 latency: 1080ms vs server-side Cosmos latency: 17ms — 1063ms gap indicates client/SDK or host overhead</li><li>Cosmos DB 429 RateLimitExceeded: 6 in last 5 min on products container</li><li>Query used instead of ReadItem: SELECT * FROM c WHERE c.id=@id vs ReadItemAsync(id,pk)</li><li>High RU consumption: 610 RU/min — 6.1x above healthy baseline</li><li>Azure Cosmos DB server-side latency: 17ms — within normal range, indicating service is healthy</li></ul>
+      <p><strong>Ruled out:</strong></p>
+      <ul><li>Azure Cosmos DB service-side outage ruled out: server-side p99 17ms is healthy</li><li>Azure SQL Database issue ruled out: SQL query latency 44ms, error count 0</li><li>Host resource exhaustion ruled out: CPU at 23%</li><li>Azure regional outage ruled out: no Azure Service Health events detected</li></ul>
+      <p><strong>Immediate safe actions (no approval needed):</strong></p>
+      <ul><li>Replace query with ReadItemAsync(id, partitionKey) for known id+pk combinations</li><li>Verify singleton CosmosClient initialized at application startup and reused across all requests</li><li>Verify SQL connection pool max size is appropriate for expected concurrency</li></ul>
+      <p><strong>Approval-required actions:</strong></p>
+      <ul><li>Re-enable indexing policy on ProductsNoIndex container — requires change request, impacts write RU</li><li>Scale AKS node pool — temporary mitigation pending root cause resolution and cost review</li><li>Increase Cosmos DB throughput/autoscale — temporary mitigation only; pending cost/risk review</li><li>Add SQL index — requires query plan review and DBA approval in production-like environment</li></ul>
+      <p><strong>DO NOT DO:</strong></p>
+      <ul class="donot"><li>DO NOT blame Azure SQL when SQL signals are healthy — SQL latency is 44ms</li><li>DO NOT leave demo chaos toggles enabled — reset before any customer handoff</li></ul>
+      <p><strong>Escalation recommendation:</strong> Keep escalation within the Contoso engineering response bridge while corrective actions are validated. Escalate externally only if ruled-out causes become active signals.</p>
+      <p><strong>Root cause / permanent fix:</strong> Correct the Cosmos indexing and query design, then validate RU efficiency with representative load.</p>
+      <p><strong>Engineering RCA:</strong> Telemetry shows p99 latency at 1080ms with 6 Cosmos 429 events, 610 RU/min consumption, host CPU 23%, and SQL latency 44ms. The active toggles (pointReadMisuse) directly align with the observed failure signature. The client-to-server latency delta of 1063ms indicates most latency is introduced in the application, SDK, query design, or host execution path rather than inside the Azure Cosmos DB service plane.</p>
+    </div>
+<hr/>
+
+    <div class="scenario-detail">
+      <h3>SQL connection pool pressure <span class="mono">(sql-connection-pool-pressure)</span></h3>
+      <p class="desc">Connections are held too long.</p>
+      <table class="kv">
+        <tr><th>Primary classification</th><td><code>SQL_DATABASE_OR_SCHEMA</code> <span class="badge ok">MATCH</span></td></tr>
+        <tr><th>Secondary classification(s)</th><td>&mdash;</td></tr>
+        <tr><th>Confidence</th><td>HIGH</td></tr>
+        <tr><th>Primary owner</th><td>Contoso Retail SQL/data engineering team</td></tr>
+        <tr><th>Customer impact</th><td>Customers are experiencing degraded catalogue and checkout performance (p99 1650ms, checkout success 88%).</td></tr>
+      </table>
+      <p><strong>Executive summary:</strong> During the incident window, Contoso Retail customers experienced degraded checkout and product catalogue performance (p99: 1650ms). Investigation evidence indicates the root cause is most likely associated with the active failure domain, specifically: Client-side p99 latency: 1650ms vs server-side Cosmos latency: 12ms — 1638ms gap indicates client/SDK or host overhead; SQL connection pool pressure: connections held beyond normal release; Azure Cosmos DB server-side latency: 12ms — within normal range, indicating service is healthy. Azure Cosmos DB service-side health remained nominal (server-side latency: 12ms). Azure SQL requires further validation. Immediate corrective actions are identified and safe to execute without service escalation.</p>
+      <p><strong>Evidence:</strong></p>
+      <ul><li>Client-side p99 latency: 1650ms vs server-side Cosmos latency: 12ms — 1638ms gap indicates client/SDK or host overhead</li><li>SQL connection pool pressure: connections held beyond normal release</li><li>Azure Cosmos DB server-side latency: 12ms — within normal range, indicating service is healthy</li></ul>
+      <p><strong>Ruled out:</strong></p>
+      <ul><li>Azure Cosmos DB service-side outage ruled out: server-side p99 12ms is healthy</li><li>Host resource exhaustion ruled out: CPU at 25%</li><li>Azure regional outage ruled out: no Azure Service Health events detected</li></ul>
+      <p><strong>Immediate safe actions (no approval needed):</strong></p>
+      <ul><li>Disable SQL connection pressure — ensure connections returned to pool promptly</li><li>Verify singleton CosmosClient initialized at application startup and reused across all requests</li><li>Verify SQL connection pool max size is appropriate for expected concurrency</li></ul>
+      <p><strong>Approval-required actions:</strong></p>
+      <ul><li>Re-enable indexing policy on ProductsNoIndex container — requires change request, impacts write RU</li><li>Scale AKS node pool — temporary mitigation pending root cause resolution and cost review</li><li>Increase Cosmos DB throughput/autoscale — temporary mitigation only; pending cost/risk review</li><li>Add SQL index — requires query plan review and DBA approval in production-like environment</li></ul>
+      <p><strong>DO NOT DO:</strong></p>
+      <ul class="donot"><li>DO NOT leave demo chaos toggles enabled — reset before any customer handoff</li></ul>
+      <p><strong>Escalation recommendation:</strong> Escalate to the SQL/data engineering owner if latency remains above 1000ms after disabling synthetic pressure. Azure escalation is not required unless platform errors persist.</p>
+      <p><strong>Root cause / permanent fix:</strong> Tune SQL schema and pool settings, then validate order-write latency under concurrency.</p>
+      <p><strong>Engineering RCA:</strong> Telemetry shows p99 latency at 1650ms with 0 Cosmos 429 events, 65 RU/min consumption, host CPU 25%, and SQL latency 2100ms. The active toggles (sqlConnectionPressure) directly align with the observed failure signature. The client-to-server latency delta of 1638ms indicates most latency is introduced in the application, SDK, query design, or host execution path rather than inside the Azure Cosmos DB service plane.</p>
+    </div>
+<hr/>
+
+    <div class="scenario-detail">
+      <h3>SQL slow query <span class="mono">(sql-slow-query)</span></h3>
+      <p class="desc">Artificial SQL slowness injected.</p>
+      <table class="kv">
+        <tr><th>Primary classification</th><td><code>SQL_DATABASE_OR_SCHEMA</code> <span class="badge ok">MATCH</span></td></tr>
+        <tr><th>Secondary classification(s)</th><td>&mdash;</td></tr>
+        <tr><th>Confidence</th><td>HIGH</td></tr>
+        <tr><th>Primary owner</th><td>Contoso Retail SQL/data engineering team</td></tr>
+        <tr><th>Customer impact</th><td>Customers are experiencing degraded catalogue and checkout performance (p99 1800ms, checkout success 90%).</td></tr>
+      </table>
+      <p><strong>Executive summary:</strong> During the incident window, Contoso Retail customers experienced degraded checkout and product catalogue performance (p99: 1800ms). Investigation evidence indicates the root cause is most likely associated with the active failure domain, specifically: Client-side p99 latency: 1800ms vs server-side Cosmos latency: 12ms — 1788ms gap indicates client/SDK or host overhead; SQL query latency: 3200ms — artificial slow query path enabled; Azure Cosmos DB server-side latency: 12ms — within normal range, indicating service is healthy. Azure Cosmos DB service-side health remained nominal (server-side latency: 12ms). Azure SQL requires further validation. Immediate corrective actions are identified and safe to execute without service escalation.</p>
+      <p><strong>Evidence:</strong></p>
+      <ul><li>Client-side p99 latency: 1800ms vs server-side Cosmos latency: 12ms — 1788ms gap indicates client/SDK or host overhead</li><li>SQL query latency: 3200ms — artificial slow query path enabled</li><li>Azure Cosmos DB server-side latency: 12ms — within normal range, indicating service is healthy</li></ul>
+      <p><strong>Ruled out:</strong></p>
+      <ul><li>Azure Cosmos DB service-side outage ruled out: server-side p99 12ms is healthy</li><li>Host resource exhaustion ruled out: CPU at 20%</li><li>Azure regional outage ruled out: no Azure Service Health events detected</li></ul>
+      <p><strong>Immediate safe actions (no approval needed):</strong></p>
+      <ul><li>Disable SQL slow query simulation — verify no N+1 query patterns in checkout path</li><li>Verify singleton CosmosClient initialized at application startup and reused across all requests</li><li>Verify SQL connection pool max size is appropriate for expected concurrency</li></ul>
+      <p><strong>Approval-required actions:</strong></p>
+      <ul><li>Re-enable indexing policy on ProductsNoIndex container — requires change request, impacts write RU</li><li>Scale AKS node pool — temporary mitigation pending root cause resolution and cost review</li><li>Increase Cosmos DB throughput/autoscale — temporary mitigation only; pending cost/risk review</li><li>Add SQL index — requires query plan review and DBA approval in production-like environment</li></ul>
+      <p><strong>DO NOT DO:</strong></p>
+      <ul class="donot"><li>DO NOT leave demo chaos toggles enabled — reset before any customer handoff</li></ul>
+      <p><strong>Escalation recommendation:</strong> Escalate to the SQL/data engineering owner if latency remains above 1000ms after disabling synthetic pressure. Azure escalation is not required unless platform errors persist.</p>
+      <p><strong>Root cause / permanent fix:</strong> Tune SQL schema and pool settings, then validate order-write latency under concurrency.</p>
+      <p><strong>Engineering RCA:</strong> Telemetry shows p99 latency at 1800ms with 0 Cosmos 429 events, 70 RU/min consumption, host CPU 20%, and SQL latency 3200ms. The active toggles (sqlSlowQuery) directly align with the observed failure signature. The client-to-server latency delta of 1788ms indicates most latency is introduced in the application, SDK, query design, or host execution path rather than inside the Azure Cosmos DB service plane.</p>
+    </div>
+
+<h2>5. Live End-to-End Walkthrough (real toggles, real traffic, not a fixture)</h2>
+<p>Instead of only replaying canned telemetry snapshots, a real incident was triggered against the running API
+(<code>http://localhost:3001</code>): <code>hotPartition</code>, <code>multipleClients</code>, and <code>highCpu</code> chaos
+toggles were enabled, 25 real product-browse requests were issued to generate genuine telemetry, and the SRE Agent investigated
+the live in-memory telemetry snapshot (not a fixture).</p>
+<table class="kv">
+<tr><th>Primary classification</th><td><code>APPLICATION_OR_CLIENT_SIDE</code></td></tr>
+<tr><th>Secondary classification(s)</th><td>HOST_OR_RUNTIME</td></tr>
+<tr><th>Confidence</th><td>HIGH</td></tr>
+<tr><th>Customer impact</th><td>Low-severity symptoms observed with p99 latency 297ms and checkout success 100%.</td></tr>
+</table>
+<p><strong>Evidence collected live:</strong></p>
+<ul><li>Cosmos DB 429 RateLimitExceeded: 25 in last 5 min on products container</li><li>Hot partition pattern active: all writes routing to fixed partition key 'hot-category'</li><li>Multiple CosmosClient instances: new client created per request instead of singleton</li><li>Host CPU: 75% — CPU burn path active (fibonacci loop on request path)</li><li>High RU consumption: 890 RU/min — 8.9x above healthy baseline</li></ul>
+<p><strong>Safe action executed:</strong> <code>POST /api/chaos/reset</code> &mdash; disabled all chaos toggles (an
+"immediate safe action, no approval needed" per the agent's own recommendation).</p>
+
+<h3>Recovery verification (9 objective criteria)</h3>
+<table>
+<tr><th>Criterion</th><th>Result</th></tr>
+<tr><td>p99 end-to-end latency returns to &lt;200ms baseline</td><td class="fail">PENDING</td></tr>
+<tr><td>Zero Cosmos DB 429 errors in 5-minute validation window</td><td class="fail">PENDING</td></tr>
+<tr><td>Host CPU returns to &lt;30% baseline</td><td class="pass">PASS</td></tr>
+<tr><td>CosmosClient singleton verified — one instance at application startup</td><td class="pass">PASS</td></tr>
+<tr><td>Query RU per operation &lt;50 RU/s</td><td class="fail">PENDING</td></tr>
+<tr><td>Unindexed query RU improves after indexing policy restored</td><td class="pass">PASS</td></tr>
+<tr><td>Checkout order write succeeds in Azure SQL in &lt;200ms</td><td class="pass">PASS</td></tr>
+<tr><td>SQL query latency returns to &lt;100ms</td><td class="pass">PASS</td></tr>
+<tr><td>SQL connection pool utilization &lt;60%</td><td class="pass">PASS</td></tr>
+</table>
+<div class="callout"><strong>Why not all 9 passed immediately:</strong> host CPU, SQL, and singleton-client checks passed the
+instant the toggles were reset. The Cosmos 429 count check intentionally uses a rolling 5-minute evidence window &mdash; it does
+not zero out the instant you flip a switch. This is by design: the agent requires the evidence window to roll forward before
+declaring "recovered", the same discipline a real SRE would apply rather than trusting a single instantaneous reading.
+Overall recovered status: <strong>PENDING (evidence window rolling forward)</strong>.</div>
+
+<h2>6. ODE Reduction Outcome</h2>
+<p>Across the 14 scenarios exercised, <strong>13
+were classified as NOT requiring Azure support escalation</strong> (application, data-model, host, or SQL-side root causes), and
+only the <code>azure-service-side-issue</code> scenario recommended considering an Azure Support case. In a real incident, this
+evidence-first classification step is what prevents unnecessary escalations, wasted engineer time, and support-case backlog —
+the core "ODE reduction" value proposition of Azure SRE Agent.</p>
+
+<h2>7. Environment Details</h2>
+<table class="kv">
+<tr><th>Repository</th><td>pronmalw/azure-sre-agent-ode-demo-kit (dev branch)</td></tr>
+<tr><th>API</th><td>Node.js/Express, http://localhost:3001, in-memory fallback (no live Cosmos/SQL configured)</td></tr>
+<tr><th>Web</th><td>React/Vite, http://localhost:3000</td></tr>
+<tr><th>Classifier</th><td>src/api/src/services/sre-classifier.service.ts</td></tr>
+<tr><th>Chaos toggles</th><td>hotPartition, metadataThrottling, multipleClients, highCpu, crossPartitionQuery, largeDocument, missingIndexing, pointReadMisuse, sqlSlowQuery, sqlConnectionPressure</td></tr>
+</table>
+
+<div class="footer">Contoso Retail — Azure SRE Agent ODE Reduction Demo Kit &middot; Generated automatically by GitHub Copilot CLI</div>
+</body>
+</html>

@@ -17,5 +17,24 @@ export const appConfig: AppConfig = {
   nodeEnv: process.env.NODE_ENV ?? 'development',
 };
 
+export const azureConfig = {
+  subscriptionId: process.env.AZURE_SUBSCRIPTION_ID ?? '',
+  resourceGroup: process.env.AZURE_RESOURCE_GROUP ?? '',
+  vpnConnectionName: process.env.VPN_CONNECTION_NAME ?? '',
+  vpnGatewayName: process.env.VPN_GATEWAY_NAME ?? '',
+  vpnHealthySharedKey: process.env.VPN_HEALTHY_SHARED_KEY ?? '',
+};
+
 export const isCosmosConfigured = (): boolean => Boolean(appConfig.cosmosEndpoint && appConfig.cosmosKey);
 export const isSqlConfigured = (): boolean => Boolean(appConfig.sqlServer && appConfig.sqlDatabase && appConfig.sqlUser && appConfig.sqlPassword);
+export const isAppInsightsConfigured = (): boolean => Boolean(appConfig.appInsightsConnectionString);
+
+// When true the VPN chaos toggle mutates a real Azure VPN Gateway connection
+// instead of only simulating packet loss in the telemetry snapshot.
+export const isAzureVpnConfigured = (): boolean =>
+  Boolean(
+    azureConfig.subscriptionId &&
+      azureConfig.resourceGroup &&
+      azureConfig.vpnConnectionName &&
+      azureConfig.vpnHealthySharedKey,
+  );

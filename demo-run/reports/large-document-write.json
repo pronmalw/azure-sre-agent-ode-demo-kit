@@ -1,0 +1,78 @@
+{
+  "scenarioId": "large-document-write",
+  "name": "Large document write",
+  "description": "Oversized documents on write path.",
+  "expectedClassification": {
+    "primary": "APPLICATION_OR_CLIENT_SIDE",
+    "secondaryIncludes": [],
+    "confidence": "HIGH"
+  },
+  "report": {
+    "incidentId": "inc-large-document-write",
+    "primaryClassification": "APPLICATION_OR_CLIENT_SIDE",
+    "secondaryClassifications": [],
+    "confidence": "HIGH",
+    "customerImpact": "Customers are experiencing degraded catalogue and checkout performance (p99 1100ms, checkout success 94%).",
+    "primaryOwner": "Contoso Retail application engineering",
+    "secondaryOwners": [
+      "Catalogue API owners",
+      "Cosmos SDK integration owners",
+      "AKS runtime owners"
+    ],
+    "evidence": [
+      "Client-side p99 latency: 1100ms vs server-side Cosmos latency: 16ms — 1084ms gap indicates client/SDK or host overhead",
+      "Cosmos DB 429 RateLimitExceeded: 12 in last 5 min on products container",
+      "Large document writes: ~52KB documents (recommended <1KB for typical catalogue items)",
+      "High RU consumption: 900 RU/min — 9x above healthy baseline",
+      "Azure Cosmos DB server-side latency: 16ms — within normal range, indicating service is healthy"
+    ],
+    "ruledOutCauses": [
+      "Azure Cosmos DB service-side outage ruled out: server-side p99 16ms is healthy",
+      "Azure SQL Database issue ruled out: SQL query latency 58ms, error count 0",
+      "Host resource exhaustion ruled out: CPU at 28%",
+      "Azure regional outage ruled out: no Azure Service Health events detected"
+    ],
+    "missingEvidence": [
+      "No packet capture or client network trace collected yet",
+      "No query plan capture attached for Cosmos or SQL request path",
+      "No deployment correlation marker present to confirm or rule out recent release impact"
+    ],
+    "immediateSafeActions": [
+      "Reduce document size — extract large blobs to Azure Blob Storage, keep documents <1KB",
+      "Verify singleton CosmosClient initialized at application startup and reused across all requests",
+      "Verify SQL connection pool max size is appropriate for expected concurrency"
+    ],
+    "approvalRequiredActions": [
+      "Re-enable indexing policy on ProductsNoIndex container — requires change request, impacts write RU",
+      "Scale AKS node pool — temporary mitigation pending root cause resolution and cost review",
+      "Increase Cosmos DB throughput/autoscale — temporary mitigation only; pending cost/risk review",
+      "Add SQL index — requires query plan review and DBA approval in production-like environment"
+    ],
+    "doNotDoGuidance": [
+      "DO NOT treat this as Azure/Cosmos DB service outage — server-side metrics are healthy",
+      "DO NOT blindly increase provisioned RU/s — this masks the hot partition root cause",
+      "DO NOT ignore hot partition evidence — increasing throughput without fixing key distribution does not resolve root cause",
+      "DO NOT blame Azure SQL when SQL signals are healthy — SQL latency is 58ms",
+      "DO NOT leave demo chaos toggles enabled — reset before any customer handoff"
+    ],
+    "escalationRecommendation": "Do NOT escalate to Azure/Cosmos support. Evidence strongly indicates application-side patterns. Escalate only if server-side latency exceeds 200ms p99, availability drops below 99.9%, or Azure Service Health shows regional impact.",
+    "temporaryMitigation": "Execute the following safe mitigations first: Reduce document size — extract large blobs to Azure Blob Storage, keep documents <1KB; Verify singleton CosmosClient initialized at application startup and reused across all requests; Verify SQL connection pool max size is appropriate for expected concurrency.",
+    "permanentFix": "Refactor Cosmos access patterns to use a singleton client, targeted point reads, well-distributed partition keys, and lean document shapes.",
+    "rollbackGuidance": "Rollback guidance: if approved changes are applied, revert the indexing policy change, reset AKS node scaling to baseline, roll back any Cosmos throughput increase, and remove non-essential SQL indexes after confirming the incident has cleared. For code fixes, disable the corresponding chaos path and redeploy the last known-good build.",
+    "verificationCriteria": [
+      "p99 end-to-end latency returns to <200ms baseline",
+      "Zero Cosmos DB 429 errors in 5-minute validation window",
+      "Host CPU returns to <30% baseline",
+      "CosmosClient singleton verified — one instance at application startup",
+      "Query RU per operation <50 RU/s",
+      "Unindexed query RU improves after indexing policy restored",
+      "Checkout order write succeeds in Azure SQL in <200ms",
+      "SQL query latency returns to <100ms",
+      "SQL connection pool utilization <60%"
+    ],
+    "executiveSummary": "During the incident window, Contoso Retail customers experienced degraded checkout and product catalogue performance (p99: 1100ms). Investigation evidence indicates the root cause is application-side, specifically: Client-side p99 latency: 1100ms vs server-side Cosmos latency: 16ms — 1084ms gap indicates client/SDK or host overhead; Cosmos DB 429 RateLimitExceeded: 12 in last 5 min on products container; Large document writes: ~52KB documents (recommended <1KB for typical catalogue items). Azure Cosmos DB service-side health remained nominal (server-side latency: 16ms). Azure SQL Database remained healthy. Immediate corrective actions are identified and safe to execute without service escalation.",
+    "engineeringRca": "Telemetry shows p99 latency at 1100ms with 12 Cosmos 429 events, 900 RU/min consumption, host CPU 28%, and SQL latency 58ms. The active toggles (largeDocument) directly align with the observed failure signature. The client-to-server latency delta of 1084ms indicates most latency is introduced in the application, SDK, query design, or host execution path rather than inside the Azure Cosmos DB service plane.",
+    "teamsUpdate": "Incident update\n- Primary classification: APPLICATION_OR_CLIENT_SIDE\n- Confidence: HIGH\n- Customer impact: Customers are experiencing degraded catalogue and checkout performance (p99 1100ms, checkout success 94%).\n- Primary owner: Contoso Retail application engineering\n- Evidence: Client-side p99 latency: 1100ms vs server-side Cosmos latency: 16ms — 1084ms gap indicates client/SDK or host overhead | Cosmos DB 429 RateLimitExceeded: 12 in last 5 min on products container | Large document writes: ~52KB documents (recommended <1KB for typical catalogue items) | High RU consumption: 900 RU/min — 9x above healthy baseline\n- Safe actions underway: Reduce document size — extract large blobs to Azure Blob Storage, keep documents <1KB | Verify singleton CosmosClient initialized at application startup and reused across all requests | Verify SQL connection pool max size is appropriate for expected concurrency\n- Escalation: Do NOT escalate to Azure/Cosmos support. Evidence strongly indicates application-side patterns. Escalate only if server-side latency exceeds 200ms p99, availability drops below 99.9%, or Azure Service Health shows regional impact.",
+    "generatedAt": "2026-08-06T15:29:29.333Z"
+  }
+}

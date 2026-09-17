@@ -7,8 +7,8 @@ param nodeCount int
 param vmSize string
 param enableContainerInsights bool
 param logAnalyticsWorkspaceId string
-@description('Subnet resource ID to deploy AKS nodes into (bring-your-own VNet, required so a VPN Gateway can share the VNet).')
-param vnetSubnetId string
+@description('Optional subnet resource ID for bring-your-own VNet. Leave empty to keep the AKS-managed VNet. Cannot be changed on an existing cluster.')
+param vnetSubnetId string = ''
 
 resource aks 'Microsoft.ContainerService/managedClusters@2024-05-01' = {
   name: aksClusterName
@@ -37,7 +37,7 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-05-01' = {
       }
     } : {}
     agentPoolProfiles: [
-      {
+      union({
         name: 'systemnp'
         count: nodeCount
         vmSize: vmSize
@@ -45,8 +45,9 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-05-01' = {
         osType: 'Linux'
         osSKU: 'Ubuntu'
         type: 'VirtualMachineScaleSets'
+      }, empty(vnetSubnetId) ? {} : {
         vnetSubnetID: vnetSubnetId
-      }
+      })
     ]
     networkProfile: {
       networkPlugin: 'azure'

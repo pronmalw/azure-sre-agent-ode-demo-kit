@@ -14,7 +14,9 @@ spec:
     metadata:
       labels:
         app: contoso-retail-api
+        azure.workload.identity/use: "true"
     spec:
+      serviceAccountName: contoso-retail-api
       containers:
         - name: api
           image: <ACR_NAME>.azurecr.io/contoso-retail-api:latest
@@ -37,6 +39,36 @@ spec:
                 configMapKeyRef:
                   name: contoso-retail-config
                   key: PORT
+            - name: AZURE_SUBSCRIPTION_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: contoso-retail-config
+                  key: AZURE_SUBSCRIPTION_ID
+            - name: AZURE_RESOURCE_GROUP
+              valueFrom:
+                configMapKeyRef:
+                  name: contoso-retail-config
+                  key: AZURE_RESOURCE_GROUP
+            - name: VPN_CONNECTION_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: contoso-retail-config
+                  key: VPN_CONNECTION_NAME
+            - name: VPN_GATEWAY_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: contoso-retail-config
+                  key: VPN_GATEWAY_NAME
+            - name: APPINSIGHTS_CLOUD_ROLE
+              valueFrom:
+                configMapKeyRef:
+                  name: contoso-retail-config
+                  key: APPINSIGHTS_CLOUD_ROLE
+            - name: VPN_HEALTHY_SHARED_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: contoso-retail-secrets
+                  key: VPN_HEALTHY_SHARED_KEY
             - name: COSMOS_ENDPOINT
               valueFrom:
                 secretKeyRef:

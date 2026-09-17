@@ -7,3 +7,8 @@ data:
   NODE_ENV: "production"
   COSMOS_DATABASE_ID: "contoso-retail"
   PORT: "3001"
+  AZURE_SUBSCRIPTION_ID: "d095c6c9-21e9-4fec-bfb0-429d1409e8e0"
+  AZURE_RESOURCE_GROUP: "rg-sreagent-ode-demo"
+  VPN_CONNECTION_NAME: "conn-main-to-onprem-euqicty6gdfys"
+  VPN_GATEWAY_NAME: "vpngw-main-euqicty6gdfys"
+  APPINSIGHTS_CLOUD_ROLE: "contoso-retail-api"

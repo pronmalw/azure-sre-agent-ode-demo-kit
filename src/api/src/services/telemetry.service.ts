@@ -1,4 +1,5 @@
 import { ChaosState, DEFAULT_CHAOS_STATE, DemoEvent, TelemetrySnapshot } from '../types';
+import { getAzureVpnChaosService } from './azure-vpn-chaos.service';
 
 export interface TelemetryOperationRecord {
   timestamp: string;
@@ -83,6 +84,24 @@ export class TelemetryService {
     const networkPacketLossPercent = this.chaosState.vpnConnectivityIssue ? 42 : 0;
     const vpnTunnelStatus: 'connected' | 'degraded' | 'down' = this.chaosState.vpnConnectivityIssue ? 'down' : 'connected';
 
+    // Prefer the real Azure VPN Gateway connection state when the API runs in Azure.
+    // getReading() is cached and refreshed in the background, so this never blocks.
+    const vpnService = getAzureVpnChaosService();
+    let effectivePacketLoss = networkPacketLossPercent;
+    let effectiveTunnelStatus: 'connected' | 'degraded' | 'down' = vpnTunnelStatus;
+
+    if (vpnService.isEnabled()) {
+      void vpnService.getReading();
+      const live = vpnService.getCachedReading();
+      // Only trust the live reading when Azure actually reported a state. While the
+      // gateway is still provisioning (or unreachable) we keep the simulated values
+      // so the demo never silently loses its VPN signal.
+      if (live && live.connectionStatus !== 'Unknown') {
+        effectiveTunnelStatus = live.status;
+        effectivePacketLoss = live.packetLossPercent;
+      }
+    }
+
     return {
       latencyP50Ms: percentile(latencies, 50),
       latencyP99Ms: percentile(latencies, 99),
@@ -102,8 +121,8 @@ export class TelemetryService {
         .map(([toggle]) => toggle),
       sqlQueryLatencyMs: average(sqlOps.map((record) => record.latencyMs)),
       sqlErrorCount: sqlOps.filter((record) => record.statusCode >= 400).length,
-      networkPacketLossPercent,
-      vpnTunnelStatus,
+      networkPacketLossPercent: effectivePacketLoss,
+      vpnTunnelStatus: effectiveTunnelStatus,
       timestamp: new Date().toISOString(),
     };
   }
