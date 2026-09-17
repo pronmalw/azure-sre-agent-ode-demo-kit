@@ -6,7 +6,10 @@ metadata:
   labels:
     app: contoso-retail-api
 spec:
-  replicas: 2
+  # Single replica on purpose: chaos toggles are in-process state. With more
+  # than one replica a toggle only reaches the pod the load balancer picked,
+  # so the scenario signals become inconsistent mid-demo.
+  replicas: 1
   selector:
     matchLabels:
       app: contoso-retail-api
@@ -79,6 +82,16 @@ spec:
                 secretKeyRef:
                   name: contoso-retail-secrets
                   key: COSMOS_KEY
+            - name: THROTTLE_COSMOS_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: contoso-retail-secrets
+                  key: THROTTLE_COSMOS_ENDPOINT
+            - name: THROTTLE_COSMOS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: contoso-retail-secrets
+                  key: THROTTLE_COSMOS_KEY
             - name: SQL_SERVER
               valueFrom:
                 secretKeyRef:

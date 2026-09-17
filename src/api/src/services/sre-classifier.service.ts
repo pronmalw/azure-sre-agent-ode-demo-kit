@@ -152,7 +152,7 @@ export const classifyIncident = (snapshot: TelemetrySnapshot): SreAgentReport =>
     addUnique(evidence, 'Query used instead of ReadItem: SELECT * FROM c WHERE c.id=@id vs ReadItemAsync(id,pk)');
   }
   if (hasToggle(snapshot, 'highCpu')) {
-    addUnique(evidence, `Host CPU: ${snapshot.hostCpuPercent}% — CPU burn path active (fibonacci loop on request path)`);
+    addUnique(evidence, `Host CPU: ${snapshot.hostCpuPercent}% — sustained CPU saturation measured on the API container (limit 1000m)`);
   }
   if (hasToggle(snapshot, 'sqlSlowQuery')) {
     addUnique(evidence, `SQL query latency: ${snapshot.sqlQueryLatencyMs}ms — artificial slow query path enabled`);
@@ -209,7 +209,7 @@ export const classifyIncident = (snapshot: TelemetrySnapshot): SreAgentReport =>
     immediateSafeActions.push('Remove per-request metadata reads — cache container properties at startup');
   }
   if (hasToggle(snapshot, 'highCpu')) {
-    immediateSafeActions.push('Disable CPU burn path — remove synchronous Fibonacci computation from request path');
+    immediateSafeActions.push('Relieve CPU saturation — scale out the API deployment or raise its CPU limit, then profile the hot code path');
   }
   if (hasToggle(snapshot, 'crossPartitionQuery')) {
     immediateSafeActions.push('Replace cross-partition query with targeted query using WHERE c.categoryId = @categoryId');

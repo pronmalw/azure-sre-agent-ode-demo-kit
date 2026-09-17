@@ -1,5 +1,6 @@
 import { ChaosState, DEFAULT_CHAOS_STATE, DemoEvent, TelemetrySnapshot } from '../types';
 import { getAzureVpnChaosService } from './azure-vpn-chaos.service';
+import { getCpuLoadService } from './cpu-load.service';
 
 export interface TelemetryOperationRecord {
   timestamp: string;
@@ -9,6 +10,12 @@ export interface TelemetryOperationRecord {
   ruCharge?: number;
   statusCode: number;
   partitionKey?: string;
+  /**
+   * Time spent inside the Azure service call itself, excluding any latency the
+   * application added on top. This is what separates "Azure is slow" from
+   * "our code is slow" in the incident classification.
+   */
+  serviceLatencyMs?: number;
 }
 
 const FIVE_MINUTES_MS = 5 * 60 * 1000;
@@ -69,14 +76,21 @@ export class TelemetryService {
     const checkoutOps = recentOperations.filter((record) => record.operationType === 'checkout');
 
     if (this.chaosState.highCpu) {
-      fibonacci(35);
+      // Real CPU pressure is produced continuously by the CPU load service
+      // (see cpu-load.service.ts), so nothing synthetic is needed here.
+      getCpuLoadService().ensureBurnEnabled();
     }
 
-    // highCpu alone must clear the classifier's >70% HOST_OR_RUNTIME threshold (15 + 65 = 80).
+    // Real measured process CPU (percent of one core, matching the container's
+    // 1000m limit). Falls back to the simulated model only when no real sample
+    // is available yet, so the demo never reports a number Azure would contradict.
+    const cpuService = getCpuLoadService();
+    const measuredCpu = cpuService.getCpuPercent();
     const simulatedHostCpu = 15
       + (this.chaosState.multipleClients ? 15 : 0)
       + (this.chaosState.highCpu ? 65 : 0)
       + (this.chaosState.sqlConnectionPressure ? 10 : 0);
+    const hostCpuPercent = measuredCpu > 0 ? measuredCpu : simulatedHostCpu;
 
     const highCosmosSignals = cosmosOps.filter((record) => record.statusCode === 429).length > 10;
     const likelyAzureServiceIssue = Object.values(this.chaosState).every((enabled) => !enabled) && highCosmosSignals && percentile(latencies, 99) > 1000;
@@ -102,13 +116,28 @@ export class TelemetryService {
       }
     }
 
+    // Real Azure-side latency: the measured duration of the Cosmos SDK call
+    // itself, excluding the latency this application adds. Only successful
+    // calls count, and the median is used rather than a tail percentile —
+    // the question this answers is "when Azure responds, is it fast?", which
+    // is what rules an Azure-side outage in or out. Throttled calls are
+    // deliberately excluded: their latency reflects RU exhaustion caused by
+    // the client's access pattern, not Cosmos being unhealthy.
+    const serviceLatencySamples = cosmosOps
+      .filter((record) => record.statusCode < 400)
+      .map((record) => record.serviceLatencyMs)
+      .filter((value): value is number => typeof value === 'number');
+    const measuredServerSideLatency = percentile(serviceLatencySamples, 50);
+    const serverSideLatencyMs =
+      serviceLatencySamples.length > 0 ? measuredServerSideLatency : likelyAzureServiceIssue ? 650 : 12;
+
     return {
       latencyP50Ms: percentile(latencies, 50),
       latencyP99Ms: percentile(latencies, 99),
       cosmos429Count: cosmosOps.filter((record) => record.statusCode === 429).length,
       ruUsage: Math.round(cosmosOps.reduce((sum, record) => sum + (record.ruCharge ?? 0), 0) * 100) / 100,
-      serverSideLatencyMs: likelyAzureServiceIssue ? 650 : 12,
-      hostCpuPercent: simulatedHostCpu,
+      serverSideLatencyMs,
+      hostCpuPercent,
       checkoutSuccessRate:
         checkoutOps.length === 0
           ? 1

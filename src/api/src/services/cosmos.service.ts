@@ -9,6 +9,16 @@ import { getTelemetryService } from './telemetry.service';
 const LARGE_PADDING = 'x'.repeat(50000);
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** Raised when Azure Cosmos DB genuinely throttles a request (HTTP 429). */
+export class CosmosThrottledError extends Error {
+  readonly statusCode = 429;
+
+  constructor(operationName: string) {
+    super(`Cosmos DB throttled the '${operationName}' operation (429 Too Many Requests).`);
+    this.name = 'CosmosThrottledError';
+  }
+}
+
 const createContainerDefinitions = () => [
   { id: 'products', partitionKey: { paths: ['/categoryId'] } },
   { id: 'carts', partitionKey: { paths: ['/userId'] } },
@@ -293,9 +303,17 @@ export class CosmosService {
         await container.read();
       }
 
-      if (chaos.hotPartition || chaos.multipleClients || chaos.crossPartitionQuery || chaos.missingIndexing || chaos.pointReadMisuse) {
-        statusCode = 429;
+      const cosmosPressureToggles =
+        chaos.hotPartition || chaos.multipleClients || chaos.crossPartitionQuery || chaos.missingIndexing || chaos.pointReadMisuse;
+
+      if (cosmosPressureToggles) {
         ruCharge += 25;
+        // Against a real Cosmos account the 429s must come from the service
+        // itself (the demo containers run at minimum RU), so we only forge the
+        // status code when running in local in-memory mode.
+        if (!isCosmosConfigured()) {
+          statusCode = 429;
+        }
       }
 
       if (chaos.largeDocument) {
@@ -318,7 +336,10 @@ export class CosmosService {
         await delay(additionalLatency);
       }
 
+      const actionStart = Date.now();
       const result = await action();
+      const serviceLatencyMs = Date.now() - actionStart;
+
       getTelemetryService().recordOperation({
         timestamp: new Date().toISOString(),
         source: 'cosmos',
@@ -327,19 +348,33 @@ export class CosmosService {
         ruCharge,
         statusCode,
         partitionKey: chaos.hotPartition ? 'hot-category' : partitionKey,
+        serviceLatencyMs,
       });
 
       return result;
     } catch (error) {
+      // Surface genuine Cosmos throttling: the SDK reports 429 (TooManyRequests)
+      // with the RU charge that was actually attempted.
+      const cosmosError = error as { code?: number | string; statusCode?: number; requestCharge?: number };
+      const rawCode = Number(cosmosError.statusCode ?? cosmosError.code);
+      const observedStatus = Number.isFinite(rawCode) && rawCode > 0 ? rawCode : 500;
+
       getTelemetryService().recordOperation({
         timestamp: new Date().toISOString(),
         source: 'cosmos',
         operationType: operationName,
         latencyMs: Date.now() - start,
-        ruCharge,
-        statusCode: 500,
-        partitionKey,
+        ruCharge: cosmosError.requestCharge ?? ruCharge,
+        statusCode: observedStatus,
+        partitionKey: chaos.hotPartition ? 'hot-category' : partitionKey,
       });
+
+      // A throttled read is a degraded response, not an outage - the demo app
+      // stays up and the 429 is recorded as evidence for the SRE Agent.
+      if (observedStatus === 429) {
+        throw new CosmosThrottledError(operationName);
+      }
+
       throw error;
     }
   }

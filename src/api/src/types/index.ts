@@ -187,4 +187,8 @@ export interface AppConfig {
   appInsightsConnectionString: string;
   port: number;
   nodeEnv: string;
+  throttleCosmosEndpoint: string;
+  throttleCosmosKey: string;
+  throttleCosmosDatabaseId: string;
+  throttleCosmosContainerId: string;
 }

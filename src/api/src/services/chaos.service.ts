@@ -2,6 +2,18 @@ import { v4 as uuid } from 'uuid';
 import { ChaosState, DEFAULT_CHAOS_STATE, DemoEvent } from '../types';
 import { getTelemetryService } from './telemetry.service';
 import { getAzureVpnChaosService } from './azure-vpn-chaos.service';
+import { getCpuLoadService } from './cpu-load.service';
+import { getCosmosThrottleService } from './cosmos-throttle.service';
+
+// Toggles that represent RU pressure on Cosmos DB.
+const COSMOS_PRESSURE_TOGGLES: Array<keyof ChaosState> = [
+  'hotPartition',
+  'multipleClients',
+  'crossPartitionQuery',
+  'missingIndexing',
+  'pointReadMisuse',
+  'metadataThrottling',
+];
 
 export class ChaosService {
   private state: ChaosState = { ...DEFAULT_CHAOS_STATE };
@@ -25,6 +37,8 @@ export class ChaosService {
   reset(): void {
     const vpnWasBroken = this.state.vpnConnectivityIssue;
     this.state = { ...DEFAULT_CHAOS_STATE };
+    getCpuLoadService().setBurnEnabled(false);
+    getCosmosThrottleService().setEnabled(false);
     if (vpnWasBroken) {
       this.applyRealAzureChaos('vpnConnectivityIssue', false);
     }
@@ -46,6 +60,20 @@ export class ChaosService {
    * multi-second ARM control-plane call.
    */
   private applyRealAzureChaos(toggle: keyof ChaosState, enabled: boolean): void {
+    if (toggle === 'highCpu') {
+      // Burn real CPU so Container Insights and the app agree on the symptom.
+      getCpuLoadService().setBurnEnabled(enabled);
+      return;
+    }
+
+    if (COSMOS_PRESSURE_TOGGLES.includes(toggle)) {
+      // Drive the provisioned 400 RU/s container hard enough that Cosmos itself
+      // returns real 429s. Kept running while any Cosmos pressure toggle is on.
+      const stillUnderPressure = COSMOS_PRESSURE_TOGGLES.some((name) => this.state[name]);
+      getCosmosThrottleService().setEnabled(enabled || stillUnderPressure);
+      return;
+    }
+
     if (toggle !== 'vpnConnectivityIssue') {
       return;
     }

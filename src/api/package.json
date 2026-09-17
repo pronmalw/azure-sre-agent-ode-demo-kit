@@ -9,7 +9,6 @@
     "lint": "eslint src --ext .ts"
   },
   "dependencies": {
-    "@azure/arm-network": "^38.0.0",
     "@azure/cosmos": "^4.0.0",
     "@azure/identity": "^4.13.3",
     "applicationinsights": "^2.9.8",
