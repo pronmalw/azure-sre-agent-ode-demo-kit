@@ -10,8 +10,15 @@ export const opsRouter = Router();
 
 let loadInterval: NodeJS.Timeout | null = null;
 let loadRps = 0;
+// Guards against overlapping load ticks. Under an active incident a single
+// tick can take far longer than the tick interval, and without this guard the
+// generator keeps queueing new work on top of unfinished work. That backlog
+// compounds until reported latency reflects queue depth rather than real
+// service latency, and the event loop starves.
+let tickInFlight = false;
 
 const runSyntheticCheckout = async (): Promise<void> => {
+  const startedAt = Date.now();
   const cosmosService = getCosmosService();
   const sqlService = getSqlService();
   const pricing = await sqlService.getProductPricing('phone-001');
@@ -48,7 +55,9 @@ const runSyntheticCheckout = async (): Promise<void> => {
     timestamp: new Date().toISOString(),
     source: 'app',
     operationType: 'checkout',
-    latencyMs: 80,
+    // Measured, not assumed: this is the signal the checkout success rate and
+    // p99 latency are derived from.
+    latencyMs: Date.now() - startedAt,
     statusCode: 201,
   });
 };
@@ -68,6 +77,16 @@ opsRouter.post('/load/start', (_req, res) => {
   if (!loadInterval) {
     loadRps = 12;
     loadInterval = setInterval(async () => {
+      // Skip this tick if the previous one has not finished. A saturated
+      // system should serve fewer requests, not accumulate an ever growing
+      // backlog.
+      if (tickInFlight) {
+        return;
+      }
+
+      tickInFlight = true;
+      const startedAt = Date.now();
+
       try {
         for (let index = 0; index < 10; index += 1) {
           await getCosmosService().getProduct(index % 2 === 0 ? 'laptop-001' : 'phone-001');
@@ -79,9 +98,11 @@ opsRouter.post('/load/start', (_req, res) => {
           timestamp: new Date().toISOString(),
           source: 'app',
           operationType: 'checkout',
-          latencyMs: 1500,
+          latencyMs: Date.now() - startedAt,
           statusCode: 500,
         });
+      } finally {
+        tickInFlight = false;
       }
     }, 1000);
   }
@@ -94,6 +115,7 @@ opsRouter.post('/load/stop', (_req, res) => {
     clearInterval(loadInterval);
     loadInterval = null;
   }
+  tickInFlight = false;
   loadRps = 0;
   res.json({ running: false, rps: loadRps });
 });

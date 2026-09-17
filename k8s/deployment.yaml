@@ -126,16 +126,24 @@ spec:
               memory: "512Mi"
           readinessProbe:
             httpGet:
-              path: /health
+              path: /api/health/live
               port: 3001
             initialDelaySeconds: 10
-            periodSeconds: 5
+            periodSeconds: 10
+            # Probes target the dependency-free liveness endpoint. The demo
+            # deliberately degrades Cosmos, SQL and CPU; a probe that checked
+            # those would evict the pod mid-scenario and wipe the in-process
+            # chaos state, turning a degraded backend into a full outage.
+            timeoutSeconds: 5
+            failureThreshold: 6
           livenessProbe:
             httpGet:
-              path: /health
+              path: /api/health/live
               port: 3001
-            initialDelaySeconds: 15
-            periodSeconds: 10
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 10
+            failureThreshold: 6
 ---
 apiVersion: apps/v1
 kind: Deployment

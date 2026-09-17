@@ -14,6 +14,12 @@ const SAMPLE_INTERVAL_MS = 5_000;
 // enough event-loop headroom for health probes to answer.
 const BURN_TICK_MS = 100;
 const BURN_BUSY_MS = 70;
+// The burn is split into short slices with a yield between each one. A single
+// unbroken 70ms block starves the event loop badly enough that the Kubernetes
+// health probe times out and the pod is killed mid-scenario, which wipes the
+// in-process chaos state. Slicing consumes exactly the same CPU while keeping
+// the longest continuous block short enough for /health to stay responsive.
+const BURN_SLICE_MS = 8;
 
 export class CpuLoadService {
   private burnTimer: NodeJS.Timeout | null = null;
@@ -67,14 +73,39 @@ export class CpuLoadService {
     }
 
     this.burnTimer = setInterval(() => {
-      const until = Date.now() + BURN_BUSY_MS;
+      this.burnSlices(BURN_BUSY_MS);
+    }, BURN_TICK_MS);
+    this.burnTimer.unref?.();
+    console.log('[cpu-load] real CPU burn started.');
+  }
+
+  /**
+   * Burns `totalMs` of CPU in short slices, yielding to the event loop between
+   * each one so queued I/O (notably the health probe) still gets served.
+   */
+  private burnSlices(totalMs: number): void {
+    let remaining = totalMs;
+
+    const runSlice = (): void => {
+      // Stop early if the burn was switched off part-way through a tick.
+      if (!this.burnTimer || remaining <= 0) {
+        return;
+      }
+
+      const sliceMs = Math.min(BURN_SLICE_MS, remaining);
+      const until = Date.now() + sliceMs;
       // Deliberate busy-wait: this is the point, we want real CPU consumption.
       while (Date.now() < until) {
         Math.sqrt(Math.random() * Number.MAX_SAFE_INTEGER);
       }
-    }, BURN_TICK_MS);
-    this.burnTimer.unref?.();
-    console.log('[cpu-load] real CPU burn started.');
+
+      remaining -= sliceMs;
+      if (remaining > 0) {
+        setImmediate(runSlice);
+      }
+    };
+
+    runSlice();
   }
 
   private stopBurn(): void {

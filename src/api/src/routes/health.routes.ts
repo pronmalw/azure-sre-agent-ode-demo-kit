@@ -7,6 +7,20 @@ import { getTelemetryService } from '../services/telemetry.service';
 
 export const healthRouter = Router();
 
+/**
+ * Liveness/readiness endpoint. Deliberately checks nothing except that the
+ * process is running and the event loop is turning.
+ *
+ * The richer '/' handler below performs live Cosmos and SQL round trips, which
+ * makes it unsuitable for probes: this demo intentionally degrades those
+ * dependencies, and a slow dependency must not cause Kubernetes to evict a pod
+ * that is still serving traffic perfectly well. Pointing probes at a dependency
+ * check turns a degraded backend into a full outage.
+ */
+healthRouter.get('/live', (_req, res) => {
+  res.json({ status: 'alive', timestamp: new Date().toISOString() });
+});
+
 healthRouter.get('/', async (_req, res) => {
   const telemetrySnapshot = getTelemetryService().getSnapshot();
   const cosmos = !isCosmosConfigured() ? 'not-configured' : (await getCosmosService().healthCheck()) ? 'ok' : 'error';
