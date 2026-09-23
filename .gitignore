@@ -8,6 +8,7 @@ dist/
 build/
 out/
 *.js.map
+.vite/
 
 # Environment / secrets — NEVER COMMIT
 .env
