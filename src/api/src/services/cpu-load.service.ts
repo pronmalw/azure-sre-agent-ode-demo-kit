@@ -9,17 +9,23 @@
  */
 
 const SAMPLE_INTERVAL_MS = 5_000;
-// Burn window per tick. Node is single threaded, so occupying 70ms of every
-// 100ms drives real utilisation to roughly 70% of a core while still leaving
-// enough event-loop headroom for health probes to answer.
+// Burn window per tick. Node is single threaded, so occupying this much of
+// every 100ms drives real utilisation to a matching share of one core while
+// still leaving enough event-loop headroom for health probes to answer.
+//
+// The requested window is not all spent burning: yielding between slices costs
+// roughly a millisecond each time, so measured utilisation lands below the
+// request. The budget below is sized so the measured figure clears the >70%
+// host-saturation threshold the incident classifier uses, with margin.
 const BURN_TICK_MS = 100;
-const BURN_BUSY_MS = 70;
+const BURN_BUSY_MS = 88;
 // The burn is split into short slices with a yield between each one. A single
-// unbroken 70ms block starves the event loop badly enough that the Kubernetes
+// unbroken block starves the event loop badly enough that the Kubernetes
 // health probe times out and the pod is killed mid-scenario, which wipes the
-// in-process chaos state. Slicing consumes exactly the same CPU while keeping
-// the longest continuous block short enough for /health to stay responsive.
-const BURN_SLICE_MS = 8;
+// in-process chaos state. Slicing consumes the same CPU while keeping the
+// longest continuous block short enough for /health to stay responsive.
+// Larger slices mean fewer yields, so less of the budget is lost to scheduling.
+const BURN_SLICE_MS = 12;
 
 export class CpuLoadService {
   private burnTimer: NodeJS.Timeout | null = null;

@@ -1,14 +1,5 @@
 import { ConfidenceLevel, IncidentClassification, SreAgentReport, TelemetrySnapshot } from '../types';
 
-const COSMOS_TOGGLES = [
-  'hotPartition',
-  'metadataThrottling',
-  'multipleClients',
-  'crossPartitionQuery',
-  'largeDocument',
-  'missingIndexing',
-  'pointReadMisuse',
-] as const;
 const APP_TOGGLES = ['hotPartition', 'metadataThrottling', 'multipleClients', 'largeDocument'] as const;
 const DB_MODEL_TOGGLES = ['crossPartitionQuery', 'missingIndexing', 'pointReadMisuse'] as const;
 const SQL_TOGGLES = ['sqlSlowQuery', 'sqlConnectionPressure'] as const;
@@ -73,7 +64,6 @@ const ownerMap: Record<IncidentClassification, { primary: string; secondary: str
 
 export const classifyIncident = (snapshot: TelemetrySnapshot): SreAgentReport => {
   const activeToggleSet = new Set(snapshot.activeToggles);
-  const anyCosmosToggle = COSMOS_TOGGLES.some((toggle) => activeToggleSet.has(toggle));
   const anyAppToggle = APP_TOGGLES.some((toggle) => activeToggleSet.has(toggle));
   const anyDbToggle = DB_MODEL_TOGGLES.some((toggle) => activeToggleSet.has(toggle));
   const anySqlToggle = SQL_TOGGLES.some((toggle) => activeToggleSet.has(toggle));
@@ -84,7 +74,27 @@ export const classifyIncident = (snapshot: TelemetrySnapshot): SreAgentReport =>
   let primaryClassification = IncidentClassification.INSUFFICIENT_EVIDENCE;
   let confidence = ConfidenceLevel.LOW;
 
-  if (snapshot.cosmos429Count > 10 && snapshot.serverSideLatencyMs < 100 && anyCosmosToggle) {
+  // Cosmos answering quickly means the account itself is keeping up, so any
+  // degradation layered on top of it originates on the caller's side.
+  const cosmosServiceHealthy = snapshot.serverSideLatencyMs < 100;
+  // Degradation actually observed in the request path, as opposed to a toggle
+  // merely being switched on. RU burn and client-side latency count alongside
+  // throttling: an oversized-document or per-request-metadata access pattern
+  // shows up as RU and latency well before it shows up as 429s.
+  const cosmosPressureObserved =
+    snapshot.cosmos429Count > 10 || snapshot.ruUsage > 500 || snapshot.latencyP99Ms > 1000;
+
+  // Data-model faults are evaluated ahead of the general application branch.
+  // Both burn RU and both eventually throttle, so 429 volume cannot separate
+  // them; what separates them is which access pattern is at fault, and the
+  // active toggles state that directly. While this was ordered second, any
+  // sustained load pushed a data-model scenario past the 429 threshold and it
+  // was reported as a generic client-side fault — routing the incident to the
+  // application team when the fix belongs to the data platform team.
+  if (anyDbToggle && onlyDbToggles && cosmosServiceHealthy) {
+    primaryClassification = IncidentClassification.DATABASE_CONFIG_OR_DATA_MODEL;
+    confidence = ConfidenceLevel.HIGH;
+  } else if (anyAppToggle && cosmosServiceHealthy && cosmosPressureObserved) {
     primaryClassification = IncidentClassification.APPLICATION_OR_CLIENT_SIDE;
     confidence = ConfidenceLevel.HIGH;
   } else if (snapshot.serverSideLatencyMs > 500 && snapshot.cosmos429Count > 10 && activeToggleSet.size === 0) {
@@ -93,10 +103,13 @@ export const classifyIncident = (snapshot: TelemetrySnapshot): SreAgentReport =>
   } else if (snapshot.hostCpuPercent > 70 && snapshot.latencyP99Ms > 1000 && onlyHighCpuToggle) {
     primaryClassification = IncidentClassification.HOST_OR_RUNTIME;
     confidence = ConfidenceLevel.HIGH;
-  } else if (anyDbToggle && onlyDbToggles) {
-    primaryClassification = IncidentClassification.DATABASE_CONFIG_OR_DATA_MODEL;
-    confidence = ConfidenceLevel.HIGH;
-  } else if (anySqlToggle && snapshot.sqlQueryLatencyMs > 1000) {
+  // sqlQueryLatencyMs is a mean across the telemetry window, so fast SQL calls
+  // from steady-state traffic dilute a slow-query burn until enough slow
+  // samples accumulate. Gating on the mean alone made SQL detection depend on
+  // how long load had been running: a 2s burn classified as INSUFFICIENT_EVIDENCE
+  // at 45s of warm-up but SQL_DATABASE_OR_SCHEMA at 60s. SQL failure counts are
+  // not averaged, so they surface the same fault immediately.
+  } else if (anySqlToggle && (snapshot.sqlQueryLatencyMs > 1000 || snapshot.sqlErrorCount > 0)) {
     primaryClassification = IncidentClassification.SQL_DATABASE_OR_SCHEMA;
     confidence = ConfidenceLevel.HIGH;
   } else if (anyNetworkToggle && snapshot.networkPacketLossPercent > 20) {
@@ -114,7 +127,7 @@ export const classifyIncident = (snapshot: TelemetrySnapshot): SreAgentReport =>
   if (anyDbToggle && primaryClassification !== IncidentClassification.DATABASE_CONFIG_OR_DATA_MODEL) {
     secondaryClassifications.push(IncidentClassification.DATABASE_CONFIG_OR_DATA_MODEL);
   }
-  if (anySqlToggle && snapshot.sqlQueryLatencyMs > 1000 && primaryClassification !== IncidentClassification.SQL_DATABASE_OR_SCHEMA) {
+  if (anySqlToggle && (snapshot.sqlQueryLatencyMs > 1000 || snapshot.sqlErrorCount > 0) && primaryClassification !== IncidentClassification.SQL_DATABASE_OR_SCHEMA) {
     secondaryClassifications.push(IncidentClassification.SQL_DATABASE_OR_SCHEMA);
   }
 

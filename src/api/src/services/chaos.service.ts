@@ -6,7 +6,7 @@ import { getCpuLoadService } from './cpu-load.service';
 import { getCosmosThrottleService } from './cosmos-throttle.service';
 
 // Toggles that represent RU pressure on Cosmos DB.
-const COSMOS_PRESSURE_TOGGLES: Array<keyof ChaosState> = [
+export const COSMOS_PRESSURE_TOGGLES: Array<keyof ChaosState> = [
   'hotPartition',
   'multipleClients',
   'crossPartitionQuery',
@@ -42,6 +42,13 @@ export class ChaosService {
     if (vpnWasBroken) {
       this.applyRealAzureChaos('vpnConnectivityIssue', false);
     }
+    // Clear the measurement buffers as well as the toggles. The telemetry
+    // snapshot is derived from a five-minute window of recorded operations, so
+    // without this the degraded samples from the scenario that just ended keep
+    // being reported after the reset: recovery verification fails against a
+    // healthy system, and the next scenario is classified from the previous
+    // scenario's evidence.
+    getTelemetryService().reset();
     getTelemetryService().setChaosState(this.state);
     const event: DemoEvent = {
       id: uuid(),

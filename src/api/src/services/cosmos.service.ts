@@ -3,7 +3,7 @@ import { v4 as uuid } from 'uuid';
 import { appConfig, isCosmosConfigured } from '../config';
 import { seedProducts, sampleReviews } from '../data/seed-data';
 import { Cart, DemoEvent, Product, Review, SreAgentReport } from '../types';
-import { getChaosService } from './chaos.service';
+import { COSMOS_PRESSURE_TOGGLES, getChaosService } from './chaos.service';
 import { getTelemetryService } from './telemetry.service';
 
 const LARGE_PADDING = 'x'.repeat(50000);
@@ -303,10 +303,13 @@ export class CosmosService {
         await container.read();
       }
 
-      const cosmosPressureToggles =
-        chaos.hotPartition || chaos.multipleClients || chaos.crossPartitionQuery || chaos.missingIndexing || chaos.pointReadMisuse;
+      // Shared with the chaos service so both agree on which toggles apply RU
+      // pressure. They previously disagreed about metadataThrottling, which
+      // meant that scenario drove the throttle generator but never recorded a
+      // throttled request locally, leaving it without evidence to classify on.
+      const underCosmosPressure = COSMOS_PRESSURE_TOGGLES.some((toggle) => chaos[toggle]);
 
-      if (cosmosPressureToggles) {
+      if (underCosmosPressure) {
         ruCharge += 25;
         // Against a real Cosmos account the 429s must come from the service
         // itself (the demo containers run at minimum RU), so we only forge the
