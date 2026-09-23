@@ -1,0 +1,33 @@
+flowchart TB
+    Browser["🌐 Browser"]
+
+    subgraph AKS["Azure Kubernetes Service (AKS)"]
+        WEB["contoso-retail-web\n(React + Vite SPA)"]
+        API["contoso-retail-api\n(Node.js / Express, TS)"]
+        CLS["classifier\n(incident classification)"]
+    end
+
+    Cosmos[("Azure Cosmos DB (NoSQL)\ncatalogue · cart · reviews\ntelemetry · SRE findings")]
+    SQL[("Azure SQL Database\npricing · customers\ninventory · orders")]
+    AI["Application Insights\n+ Log Analytics"]
+    ACR["Azure Container Registry\n(API + Web images)"]
+    VNet["VNet + VPN Gateway\n(chaos/network scenarios)"]
+    Ops["/ops panel"]
+    SREView["/sre-agent view"]
+
+    Browser --> WEB
+    WEB -->|"/api requests"| API
+    API --> Cosmos
+    API --> SQL
+    API --> AI
+    WEB --> Ops
+    WEB --> SREView
+    Ops --> API
+    SREView --> CLS
+    CLS --> AI
+    CLS --> Cosmos
+    ACR -. "images pulled by" .-> AKS
+    VNet -. "connects" .-> AKS
+    VNet -. "connects" .-> SQL
+
+    Scenarios["scenarios/*.json\n(chaos incident fixtures)"] -.->|"drives"| CLS
