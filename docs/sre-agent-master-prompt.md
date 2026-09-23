@@ -1,5 +1,17 @@
 # SRE Agent Master Investigation Prompt
 
+> ⚠️ **This prompt is not validated against the deployed environment.** Several of
+> the queries below reference an App Insights schema and custom metric names that
+> do not exist in this deployment — `requests`, `traces`, `customMetrics` and
+> `customEvents` are unavailable because App Insights here is workspace-based, and
+> metrics such as `cosmos_ru_consumed` and `sql_query_duration_ms` were never
+> emitted (the real names are `contoso.*`). Running this as-is will return empty
+> results.
+>
+> **Use [`sre-agent-demo-prompt.md`](./sre-agent-demo-prompt.md) instead** — every
+> table and metric in it was verified against the live workspace. This file is
+> retained for its scenario narrative and report structure.
+
 > **Usage:** Copy the prompt below and paste it into [sre.azure.com](https://sre.azure.com) → `contoso-sre-agent`.  
 > This single prompt covers **all 6 demo scenarios**, uses a **1-hour lookback window**, produces a **structured PDF report**, and seeks **user approval before any remediation action**.
 
