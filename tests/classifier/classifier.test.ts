@@ -136,15 +136,17 @@ describe('classifier scenarios', () => {
     expect(report.confidence).toBe('LOW');
   });
 
-  // sqlQueryLatencyMs is a mean over the telemetry window, so steady-state fast
-  // SQL calls dilute a slow-query burn below the latency gate until enough slow
-  // samples accumulate. Against real Azure SQL the same 2s burn classified as
-  // INSUFFICIENT_EVIDENCE at 45s of warm-up and SQL_DATABASE_OR_SCHEMA at 60s.
-  it('classifies a SQL fault from error counts while the latency mean is still diluted', () => {
+  // sqlQueryLatencyMs was a mean over the telemetry window, so ordinary fast
+  // queries diluted a slow-query burn below the latency gate until enough slow
+  // samples accumulated: against real Azure SQL the same fault classified as
+  // INSUFFICIENT_EVIDENCE after 45s of load and SQL_DATABASE_OR_SCHEMA after
+  // 60s. Telemetry now reports p95 so the slow tail survives dilution, and the
+  // classifier also keys on SQL failures, which are counted rather than averaged.
+  it('classifies a SQL fault from error counts even when the latency signal is weak', () => {
     const scenario = readScenario('sql-slow-query.json');
-    const dilutedMean = { ...scenario.telemetry, sqlQueryLatencyMs: 420, sqlErrorCount: 26 };
+    const weakLatencySignal = { ...scenario.telemetry, sqlQueryLatencyMs: 420, sqlErrorCount: 26 };
 
-    const report = classifyIncident(dilutedMean);
+    const report = classifyIncident(weakLatencySignal);
 
     expect(report.primaryClassification).toBe('SQL_DATABASE_OR_SCHEMA');
     expect(report.confidence).toBe('HIGH');

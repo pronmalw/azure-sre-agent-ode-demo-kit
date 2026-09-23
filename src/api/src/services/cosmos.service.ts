@@ -1,13 +1,31 @@
 import { Container, CosmosClient, Database } from '@azure/cosmos';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { v4 as uuid } from 'uuid';
 import { appConfig, isCosmosConfigured } from '../config';
 import { seedProducts, sampleReviews } from '../data/seed-data';
-import { Cart, DemoEvent, Product, Review, SreAgentReport } from '../types';
+import { Cart, ChaosState, DemoEvent, Product, Review, SreAgentReport } from '../types';
 import { COSMOS_PRESSURE_TOGGLES, getChaosService } from './chaos.service';
 import { getTelemetryService } from './telemetry.service';
 
 const LARGE_PADDING = 'x'.repeat(50000);
-const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Collects the RU charges Azure Cosmos DB reports for the operation currently
+ * in flight. Request handling interleaves, so the accumulator is carried in
+ * async context rather than on the instance, which would let concurrent
+ * requests bill each other.
+ */
+const ruTracker = new AsyncLocalStorage<{ charge: number }>();
+
+/** Adds a Cosmos response's measured RU charge to the operation in flight. */
+const trackRu = <T extends { requestCharge?: number }>(response: T): T => {
+  const store = ruTracker.getStore();
+  if (store && typeof response.requestCharge === 'number') {
+    store.charge += response.requestCharge;
+  }
+
+  return response;
+};
 
 /** Raised when Azure Cosmos DB genuinely throttles a request (HTTP 429). */
 export class CosmosThrottledError extends Error {
@@ -62,16 +80,18 @@ export class CosmosService {
       const chaos = getChaosService().getState();
 
       if (chaos.crossPartitionQuery || !categoryId) {
-        const { resources } = await container.items.query<Product>({ query: 'SELECT * FROM c' }).fetchAll();
+        const { resources } = trackRu(await container.items.query<Product>({ query: 'SELECT * FROM c' }).fetchAll());
         return categoryId ? resources.filter((product) => product.categoryId === categoryId) : resources;
       }
 
-      const { resources } = await container.items
-        .query<Product>({
-          query: 'SELECT * FROM c WHERE c.categoryId = @categoryId',
-          parameters: [{ name: '@categoryId', value: categoryId }],
-        })
-        .fetchAll();
+      const { resources } = trackRu(
+        await container.items
+          .query<Product>({
+            query: 'SELECT * FROM c WHERE c.categoryId = @categoryId',
+            parameters: [{ name: '@categoryId', value: categoryId }],
+          })
+          .fetchAll(),
+      );
       return resources;
     });
   }
@@ -88,9 +108,11 @@ export class CosmosService {
       const chaos = getChaosService().getState();
 
       if (chaos.pointReadMisuse) {
-        const { resources } = await container.items
-          .query<Product>({ query: 'SELECT * FROM c WHERE c.id = @id', parameters: [{ name: '@id', value: id }] })
-          .fetchAll();
+        const { resources } = trackRu(
+          await container.items
+            .query<Product>({ query: 'SELECT * FROM c WHERE c.id = @id', parameters: [{ name: '@id', value: id }] })
+            .fetchAll(),
+        );
         return resources[0] ?? null;
       }
 
@@ -99,7 +121,9 @@ export class CosmosService {
         return null;
       }
 
-      const response = await container.item(id, this.shouldUseNoIndexContainer() ? id : product.categoryId).read<Product>();
+      const response = trackRu(
+        await container.item(id, this.shouldUseNoIndexContainer() ? id : product.categoryId).read<Product>(),
+      );
       return response.resource ?? null;
     });
   }
@@ -117,8 +141,8 @@ export class CosmosService {
       await this.ensureInitialized();
       const indexedContainer = await this.getContainer('products');
       const noIndexContainer = await this.getContainer('ProductsNoIndex');
-      await indexedContainer.items.upsert(payload);
-      await noIndexContainer.items.upsert({ ...payload, id: product.id });
+      trackRu(await indexedContainer.items.upsert(payload));
+      trackRu(await noIndexContainer.items.upsert({ ...payload, id: product.id }));
     });
   }
 
@@ -130,7 +154,7 @@ export class CosmosService {
 
       await this.ensureInitialized();
       const container = await this.getContainer('carts');
-      const response = await container.item(userId, userId).read<Cart>();
+      const response = trackRu(await container.item(userId, userId).read<Cart>());
       return response.resource ?? null;
     });
   }
@@ -144,7 +168,11 @@ export class CosmosService {
 
       await this.ensureInitialized();
       const container = await this.getContainer('carts');
-      await container.items.upsert({ ...cart, id: cart.userId });
+      // Carts are the document the demo writes continuously, so this is where an
+      // oversized document actually costs something. Padding only the catalogue
+      // write path left the scenario with no measurable effect, because nothing
+      // in the running workload writes products.
+      trackRu(await container.items.upsert(this.decorateDocument({ ...cart, id: cart.userId })));
     });
   }
 
@@ -165,9 +193,11 @@ export class CosmosService {
 
       await this.ensureInitialized();
       const container = await this.getContainer('Reviews');
-      const { resources } = await container.items
-        .query<Review>({ query: 'SELECT * FROM c WHERE c.productId = @productId', parameters: [{ name: '@productId', value: productId }] })
-        .fetchAll();
+      const { resources } = trackRu(
+        await container.items
+          .query<Review>({ query: 'SELECT * FROM c WHERE c.productId = @productId', parameters: [{ name: '@productId', value: productId }] })
+          .fetchAll(),
+      );
       return resources;
     });
   }
@@ -184,7 +214,7 @@ export class CosmosService {
 
       await this.ensureInitialized();
       const container = await this.getContainer('Reviews');
-      await container.items.upsert(review);
+      trackRu(await container.items.upsert(review));
     });
   }
 
@@ -198,7 +228,7 @@ export class CosmosService {
 
       await this.ensureInitialized();
       const container = await this.getContainer('SreInvestigations');
-      await container.items.upsert({ ...report, id: report.incidentId, incidentId: report.incidentId });
+      trackRu(await container.items.upsert({ ...report, id: report.incidentId, incidentId: report.incidentId }));
     });
   }
 
@@ -213,7 +243,7 @@ export class CosmosService {
 
       await this.ensureInitialized();
       const container = await this.getContainer('DemoTelemetry');
-      await container.items.upsert(event);
+      trackRu(await container.items.upsert(event));
     });
   }
 
@@ -231,12 +261,24 @@ export class CosmosService {
     }
   }
 
-  private decorateProductDocument(product: Product): Product & { padding?: string } {
+  /**
+   * Applies the oversized-document anti-pattern to a document the demo writes.
+   *
+   * Cosmos charges RU in proportion to document size, so padding a document to
+   * ~52KB makes the write genuinely expensive and inflates every subsequent
+   * read of it. The cost is therefore real and visible in the RU the service
+   * reports, rather than being asserted by the application.
+   */
+  private decorateDocument<T extends object>(document: T): T & { padding?: string } {
     if (getChaosService().getState().largeDocument) {
-      return { ...product, padding: LARGE_PADDING };
+      return { ...document, padding: LARGE_PADDING };
     }
 
-    return product;
+    return document as T & { padding?: string };
+  }
+
+  private decorateProductDocument(product: Product): Product & { padding?: string } {
+    return this.decorateDocument(product);
   }
 
   private shouldUseNoIndexContainer(): boolean {
@@ -289,97 +331,95 @@ export class CosmosService {
     return this.client;
   }
 
-  private async runOperation<T>(operationName: string, partitionKey: string, action: () => Promise<T>): Promise<T> {
-    const start = Date.now();
-    const chaos = getChaosService().getState();
-    let statusCode = 200;
+  /**
+   * RU figure used only when there is no Azure Cosmos DB to bill us - the local
+   * in-memory mode the kit falls back to when Cosmos is not configured. When
+   * Cosmos is configured the snapshot carries the charges Azure actually
+   * reported, so the demo never shows a number the portal would contradict.
+   */
+  private inMemoryRuEstimate(chaos: ChaosState): number {
     let ruCharge = 5;
 
-    try {
-      await this.getClientForOperation();
+    if (COSMOS_PRESSURE_TOGGLES.some((toggle) => chaos[toggle])) {
+      ruCharge += 25;
+    }
 
-      if (chaos.metadataThrottling && isCosmosConfigured()) {
-        const container = await this.getProductsContainer();
-        await container.read();
-      }
+    if (chaos.largeDocument) {
+      ruCharge += 40;
+    }
 
-      // Shared with the chaos service so both agree on which toggles apply RU
-      // pressure. They previously disagreed about metadataThrottling, which
-      // meant that scenario drove the throttle generator but never recorded a
-      // throttled request locally, leaving it without evidence to classify on.
-      const underCosmosPressure = COSMOS_PRESSURE_TOGGLES.some((toggle) => chaos[toggle]);
+    return ruCharge;
+  }
 
-      if (underCosmosPressure) {
-        ruCharge += 25;
-        // Against a real Cosmos account the 429s must come from the service
-        // itself (the demo containers run at minimum RU), so we only forge the
-        // status code when running in local in-memory mode.
-        if (!isCosmosConfigured()) {
+  private async runOperation<T>(operationName: string, partitionKey: string, action: () => Promise<T>): Promise<T> {
+    const store = { charge: 0 };
+
+    return ruTracker.run(store, async () => {
+      const start = Date.now();
+      const chaos = getChaosService().getState();
+      let statusCode = 200;
+
+      try {
+        await this.getClientForOperation();
+
+        if (chaos.metadataThrottling && isCosmosConfigured()) {
+          const container = await this.getProductsContainer();
+          trackRu(await container.read());
+        }
+
+        // Against a real Cosmos account the 429s come from the service itself,
+        // so a status code is only forged in local in-memory mode where there
+        // is nothing to throttle us.
+        if (!isCosmosConfigured() && COSMOS_PRESSURE_TOGGLES.some((toggle) => chaos[toggle])) {
           statusCode = 429;
         }
+
+        const actionStart = Date.now();
+        const result = await action();
+        const serviceLatencyMs = Date.now() - actionStart;
+
+        const ruCharge = isCosmosConfigured()
+          ? Math.round(store.charge * 100) / 100
+          : this.inMemoryRuEstimate(chaos);
+
+        getTelemetryService().recordOperation({
+          timestamp: new Date().toISOString(),
+          source: 'cosmos',
+          operationType: operationName,
+          latencyMs: Date.now() - start,
+          ruCharge,
+          statusCode,
+          partitionKey: chaos.hotPartition ? 'hot-category' : partitionKey,
+          serviceLatencyMs,
+        });
+
+        return result;
+      } catch (error) {
+        // Surface genuine Cosmos throttling: the SDK reports 429 (TooManyRequests)
+        // with the RU charge that was actually attempted.
+        const cosmosError = error as { code?: number | string; statusCode?: number; requestCharge?: number };
+        const rawCode = Number(cosmosError.statusCode ?? cosmosError.code);
+        const observedStatus = Number.isFinite(rawCode) && rawCode > 0 ? rawCode : 500;
+
+        getTelemetryService().recordOperation({
+          timestamp: new Date().toISOString(),
+          source: 'cosmos',
+          operationType: operationName,
+          latencyMs: Date.now() - start,
+          ruCharge: cosmosError.requestCharge ?? Math.round(store.charge * 100) / 100,
+          statusCode: observedStatus,
+          partitionKey: chaos.hotPartition ? 'hot-category' : partitionKey,
+        });
+
+        // A throttled read is a degraded response, not an outage - the demo app
+        // stays up and the 429 is recorded as evidence for the SRE Agent.
+        if (observedStatus === 429) {
+          throw new CosmosThrottledError(operationName);
+        }
+
+        throw error;
       }
-
-      if (chaos.largeDocument) {
-        ruCharge += 40;
-      }
-
-      const additionalLatency =
-        (chaos.metadataThrottling ? 90 : 0)
-        + (chaos.multipleClients ? 60 : 0)
-        + (chaos.hotPartition ? 140 : 0)
-        + (chaos.crossPartitionQuery ? 80 : 0)
-        + (chaos.missingIndexing ? 120 : 0)
-        + (chaos.pointReadMisuse ? 45 : 0)
-        + (chaos.largeDocument ? 70 : 0)
-        // Simulated event-loop CPU starvation delaying request completion, so highCpu produces
-        // real measurable p99 latency instead of only a background CPU-burn side effect.
-        + (chaos.highCpu ? 1200 : 0);
-
-      if (additionalLatency > 0) {
-        await delay(additionalLatency);
-      }
-
-      const actionStart = Date.now();
-      const result = await action();
-      const serviceLatencyMs = Date.now() - actionStart;
-
-      getTelemetryService().recordOperation({
-        timestamp: new Date().toISOString(),
-        source: 'cosmos',
-        operationType: operationName,
-        latencyMs: Date.now() - start,
-        ruCharge,
-        statusCode,
-        partitionKey: chaos.hotPartition ? 'hot-category' : partitionKey,
-        serviceLatencyMs,
-      });
-
-      return result;
-    } catch (error) {
-      // Surface genuine Cosmos throttling: the SDK reports 429 (TooManyRequests)
-      // with the RU charge that was actually attempted.
-      const cosmosError = error as { code?: number | string; statusCode?: number; requestCharge?: number };
-      const rawCode = Number(cosmosError.statusCode ?? cosmosError.code);
-      const observedStatus = Number.isFinite(rawCode) && rawCode > 0 ? rawCode : 500;
-
-      getTelemetryService().recordOperation({
-        timestamp: new Date().toISOString(),
-        source: 'cosmos',
-        operationType: operationName,
-        latencyMs: Date.now() - start,
-        ruCharge: cosmosError.requestCharge ?? ruCharge,
-        statusCode: observedStatus,
-        partitionKey: chaos.hotPartition ? 'hot-category' : partitionKey,
-      });
-
-      // A throttled read is a degraded response, not an outage - the demo app
-      // stays up and the 429 is recorded as evidence for the SRE Agent.
-      if (observedStatus === 429) {
-        throw new CosmosThrottledError(operationName);
-      }
-
-      throw error;
-    }
+    });
   }
 }
 

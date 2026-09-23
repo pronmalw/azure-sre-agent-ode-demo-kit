@@ -82,37 +82,39 @@ export class TelemetryService {
     }
 
     // Real measured process CPU (percent of one core, matching the container's
-    // 1000m limit). Falls back to the simulated model only when no real sample
-    // is available yet, so the demo never reports a number Azure would contradict.
+    // 1000m limit). The CPU burn behind the highCpu scenario is genuine, so this
+    // figure is the measured consequence of it rather than a description of it.
+    // The modelled value is a bootstrap only: it covers the window before the
+    // first sampler tick lands, after which the measured number always wins.
     const cpuService = getCpuLoadService();
     const measuredCpu = cpuService.getCpuPercent();
-    const simulatedHostCpu = 15
+    const bootstrapHostCpu = 15
       + (this.chaosState.multipleClients ? 15 : 0)
       + (this.chaosState.highCpu ? 65 : 0)
       + (this.chaosState.sqlConnectionPressure ? 10 : 0);
-    const hostCpuPercent = measuredCpu > 0 ? measuredCpu : simulatedHostCpu;
+    const hostCpuPercent = measuredCpu > 0 ? measuredCpu : bootstrapHostCpu;
 
     const highCosmosSignals = cosmosOps.filter((record) => record.statusCode === 429).length > 10;
     const likelyAzureServiceIssue = Object.values(this.chaosState).every((enabled) => !enabled) && highCosmosSignals && percentile(latencies, 99) > 1000;
 
-    const networkPacketLossPercent = this.chaosState.vpnConnectivityIssue ? 42 : 0;
-    const vpnTunnelStatus: 'connected' | 'degraded' | 'down' = this.chaosState.vpnConnectivityIssue ? 'down' : 'connected';
-
-    // Prefer the real Azure VPN Gateway connection state when the API runs in Azure.
-    // getReading() is cached and refreshed in the background, so this never blocks.
+    // When a real Azure VPN Gateway is wired up the tunnel state is read from
+    // ARM and the loss percentage is derived from the connection's own byte
+    // counters. The modelled pair below is used only when no gateway is
+    // configured - the local in-memory mode - where there is no tunnel to read.
     const vpnService = getAzureVpnChaosService();
-    let effectivePacketLoss = networkPacketLossPercent;
-    let effectiveTunnelStatus: 'connected' | 'degraded' | 'down' = vpnTunnelStatus;
+    let effectiveTunnelStatus: 'connected' | 'degraded' | 'down' = this.chaosState.vpnConnectivityIssue ? 'down' : 'connected';
+    let effectivePacketLoss = this.chaosState.vpnConnectivityIssue ? 42 : 0;
 
     if (vpnService.isEnabled()) {
       void vpnService.getReading();
       const live = vpnService.getCachedReading();
-      // Only trust the live reading when Azure actually reported a state. While the
-      // gateway is still provisioning (or unreachable) we keep the simulated values
-      // so the demo never silently loses its VPN signal.
-      if (live && live.connectionStatus !== 'Unknown') {
-        effectiveTunnelStatus = live.status;
-        effectivePacketLoss = live.packetLossPercent;
+      // Report what Azure reports. While the gateway is provisioning or
+      // unreachable its state is genuinely unknown, so the tunnel is described
+      // as degraded rather than borrowing the modelled failure numbers - those
+      // would assert a specific loss figure nothing has measured.
+      if (live) {
+        effectiveTunnelStatus = live.connectionStatus === 'Unknown' ? 'degraded' : live.status;
+        effectivePacketLoss = live.connectionStatus === 'Unknown' ? 0 : live.packetLossPercent;
       }
     }
 
@@ -148,7 +150,13 @@ export class TelemetryService {
       activeToggles: Object.entries(this.chaosState)
         .filter(([, enabled]) => enabled)
         .map(([toggle]) => toggle),
-      sqlQueryLatencyMs: average(sqlOps.map((record) => record.latencyMs)),
+      // A slow query is slow, not failed. Reporting the real status keeps the
+      // SQL signal honest: the evidence is the query duration Azure SQL
+      // actually spent, which Query Store and sys.dm_exec_requests corroborate.
+      sqlQueryLatencyMs: percentile(
+        sqlOps.map((record) => record.latencyMs),
+        95,
+      ),
       sqlErrorCount: sqlOps.filter((record) => record.statusCode >= 400).length,
       networkPacketLossPercent: effectivePacketLoss,
       vpnTunnelStatus: effectiveTunnelStatus,

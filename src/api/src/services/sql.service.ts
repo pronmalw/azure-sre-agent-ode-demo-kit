@@ -451,7 +451,7 @@ export class SqlService {
         source: 'sql',
         operationType,
         latencyMs: Date.now() - start,
-        statusCode: chaos.sqlSlowQuery || chaos.sqlConnectionPressure ? 503 : statusCode,
+        statusCode,
       });
       return result;
     } catch (error) {

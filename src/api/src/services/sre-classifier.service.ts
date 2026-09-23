@@ -100,7 +100,13 @@ export const classifyIncident = (snapshot: TelemetrySnapshot): SreAgentReport =>
   } else if (snapshot.serverSideLatencyMs > 500 && snapshot.cosmos429Count > 10 && activeToggleSet.size === 0) {
     primaryClassification = IncidentClassification.AZURE_SERVICE_SIDE;
     confidence = ConfidenceLevel.MEDIUM;
-  } else if (snapshot.hostCpuPercent > 70 && snapshot.latencyP99Ms > 1000 && onlyHighCpuToggle) {
+    // Host saturation is evidenced by CPU, not by a fixed latency floor. The
+    // previous >1000ms gate only ever passed because the application injected
+    // 1200ms of artificial delay whenever this toggle was on. With that removed,
+    // a genuinely saturated pod measures 91% CPU and a p99 of roughly 400ms
+    // against a 70ms healthy baseline, so the threshold is the 200ms the kit
+    // already treats as the boundary of healthy in its recovery criteria.
+  } else if (snapshot.hostCpuPercent > 70 && snapshot.latencyP99Ms > 200 && onlyHighCpuToggle) {
     primaryClassification = IncidentClassification.HOST_OR_RUNTIME;
     confidence = ConfidenceLevel.HIGH;
   // sqlQueryLatencyMs is a mean across the telemetry window, so fast SQL calls
