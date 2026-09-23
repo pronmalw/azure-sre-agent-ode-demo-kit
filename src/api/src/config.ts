@@ -2,6 +2,10 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { AppConfig } from './types';
 
+// The README documents src/api/.env, but the previous single lookup only
+// resolved src/api/src/.env. Load both (dotenv never overrides variables that
+// are already set, so real env vars injected by Kubernetes still win).
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 dotenv.config({ path: path.resolve(process.cwd(), 'src', '.env') });
 
 export const appConfig: AppConfig = {

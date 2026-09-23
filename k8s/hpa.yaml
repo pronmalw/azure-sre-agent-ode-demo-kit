@@ -1,13 +1,19 @@
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: contoso-retail-api
+  name: contoso-retail-web
   namespace: contoso-retail
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: contoso-retail-api
+    name: contoso-retail-web
+  # This autoscaler deliberately targets the web tier, not the API. Chaos toggle
+  # state lives in memory inside each API pod, so scaling the API out means a
+  # toggle only reaches the pod the load balancer happened to pick while
+  # telemetry is read from another - the demo then reports a healthy system
+  # while a scenario is active. The web tier holds no such state and is safe to
+  # scale. Keep the API at replicas: 1 in deployment.yaml.
   minReplicas: 2
   maxReplicas: 10
   metrics:

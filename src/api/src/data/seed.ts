@@ -1,4 +1,4 @@
-import { seedProducts, seedPricing, sampleCustomers, sampleInventory } from './seed-data';
+import { seedProducts, seedPricing, sampleCustomers, sampleInventory, sampleReviews } from './seed-data';
 import { getCosmosService } from '../services/cosmos.service';
 import { getSqlService } from '../services/sql.service';
 
@@ -8,6 +8,11 @@ const seedCosmos = async (): Promise<void> => {
   const cosmosService = getCosmosService();
   for (const product of seedProducts) {
     await cosmosService.upsertProduct(product);
+  }
+  // Products advertise a reviewCount, so the Reviews container has to be
+  // populated too or every product detail page shows zero reviews.
+  for (const review of sampleReviews) {
+    await cosmosService.addReview(review);
   }
 };
 

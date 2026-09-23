@@ -35,6 +35,9 @@ param enableContainerInsights bool = true
 @description('Attach AKS nodes to the custom VNet. Only valid at cluster creation time - Azure rejects changing agentPoolProfile.vnetSubnetID on an existing cluster.')
 param attachAksToVnet bool = false
 
+@description('Deploy the provisioned 400 RU/s Cosmos account used to generate real HTTP 429 throttling.')
+param deployThrottleProbe bool = true
+
 @secure()
 param sqlAdministratorPassword string = newGuid()
 
@@ -71,6 +74,17 @@ module cosmos 'modules/cosmos-nosql-sqlapi.bicep' = {
     tags: tags
     resourceToken: resourceToken
     logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
+  }
+}
+
+// Separate provisioned account: the application account above is serverless and
+// cannot be throttled, so real 429 generation needs its own 400 RU/s container.
+module cosmosThrottle 'modules/cosmos-throttle.bicep' = if (deployThrottleProbe) {
+  name: 'cosmosThrottle'
+  params: {
+    location: location
+    tags: tags
+    resourceToken: resourceToken
   }
 }
 
@@ -150,4 +164,8 @@ output aksClusterName string = hostingMode == 'aks' ? aks!.outputs.clusterName :
 output acrLoginServer string = hostingMode == 'aks' ? acr!.outputs.acrLoginServer : ''
 output vnetGatewaySubnetId string = hostingMode == 'aks' ? vnet!.outputs.gatewaySubnetId : ''
 output vnetName string = hostingMode == 'aks' ? vnet!.outputs.vnetName : ''
+output throttleCosmosAccountName string = deployThrottleProbe ? cosmosThrottle!.outputs.accountName : ''
+output throttleCosmosEndpoint string = deployThrottleProbe ? cosmosThrottle!.outputs.endpoint : ''
+output throttleCosmosDatabaseId string = deployThrottleProbe ? cosmosThrottle!.outputs.databaseId : ''
+output throttleCosmosContainerId string = deployThrottleProbe ? cosmosThrottle!.outputs.containerId : ''
 output appUrl string = ''
