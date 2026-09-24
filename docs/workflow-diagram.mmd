@@ -1,0 +1,140 @@
+%% Contoso Retail — SRE Agent demo: incident lifecycle workflow
+%% Every resource name, threshold and metric was verified against the live
+%% deployment in rg-sreagent-ode-demo on 2026-09-24.
+
+flowchart TB
+
+    %% ---------- 1. TRIGGER ----------
+    subgraph S1["① TRIGGER"]
+        direction LR
+        OPS["/ops panel<br/>11 chaos toggles"]
+        LOAD["load generator<br/>/api/ops/load/start"]
+        CHAOS["chaos.service<br/><i>in-memory, per-pod</i>"]
+        OPS --> CHAOS
+        OPS --> LOAD
+    end
+
+    %% ---------- 2. REAL EFFECTS ----------
+    subgraph S2["② REAL EFFECTS — measured, not simulated"]
+        direction LR
+        BURN["CPU burn<br/>88ms per 100ms tick"]
+        THROTTLE["writes to 400 RU/s<br/>HotPartition container"]
+        SLOWSQL["SQL WAITFOR<br/>delay"]
+        PAD["+50KB cart<br/>document padding"]
+        VPNKEY["IPsec key<br/>rotation"]
+    end
+
+    CHAOS --> S2
+
+    %% ---------- 3. WORKLOAD ----------
+    subgraph S3["③ WORKLOAD — AKS aks-contoso-sreagent-demo"]
+        direction LR
+        WEB["contoso-retail-web<br/>2 replicas · HPA 2–10"]
+        API["contoso-retail-api<br/><b>1 replica — pinned</b><br/>cpu req 250m / limit 1"]
+        WEB --> API
+    end
+
+    LOAD --> API
+    BURN --> API
+    THROTTLE --> API
+    SLOWSQL --> API
+    PAD --> API
+
+    %% ---------- 4. BACKENDS ----------
+    subgraph S4["④ AZURE BACKENDS"]
+        direction LR
+        COSMOS[("cosmos-euqicty6gdfys<br/><i>serverless</i><br/>cannot throttle")]
+        COSMOSTH[("cosmos-throttle-…<br/><i>provisioned 400 RU/s</i><br/>real 429s")]
+        SQLDB[("contoso-retail-db<br/>GP_S_Gen5")]
+        VPNGW["VPN Gateway<br/>2 connections"]
+    end
+
+    API --> COSMOS
+    API --> COSMOSTH
+    API --> SQLDB
+    VPNKEY --> VPNGW
+
+    %% ---------- 5. TELEMETRY HUB ----------
+    LAW[["<b>law-euqicty6gdfys</b><br/>single Log Analytics workspace"]]
+
+    subgraph S5["⑤ TELEMETRY TABLES"]
+        direction LR
+        APPM["AppMetrics<br/>11 × contoso.*"]
+        APPD["AppDependencies<br/>429 ResultCode"]
+        PERF["Perf<br/>K8SContainer / K8SNode"]
+        KEV["KubeEvents<br/>probe + HPA warnings"]
+        AZDIAG["AzureDiagnostics<br/>PartitionKeyRUConsumption<br/>DatabaseWaitStatistics"]
+    end
+
+    API -->|"App Insights SDK"| LAW
+    API -.->|"Container Insights"| LAW
+    COSMOSTH -.->|"diagnostic settings"| LAW
+    SQLDB -.->|"diagnostic settings"| LAW
+    VPNGW -.-> LAW
+    LAW --> S5
+
+    %% ---------- 6. DETECTION ----------
+    subgraph S6["⑥ DETECTION"]
+        direction LR
+        RULES["7 alert rules<br/>6 scheduled + 1 metric"]
+        AG["action group<br/>ag-sre-demo"]
+        RULES --> AG
+    end
+
+    S5 --> RULES
+
+    %% ---------- 7. INVESTIGATION ----------
+    subgraph S7["⑦ INVESTIGATION — two distinct paths"]
+        direction LR
+        CLS["<b>Path A</b> — in-repo classifier<br/>/sre-agent view<br/>rule-based, deterministic<br/><i>offline, no Azure calls</i>"]
+        AGENT["<b>Path B</b> — Azure SRE Agent<br/>contoso-sre-agent · swedencentral<br/>mode: review · access: High<br/>KG: app RG + AKS node RG"]
+    end
+
+    APPM --> CLS
+    S5 -->|"KQL"| AGENT
+    AG -->|"AzMonitor incident"| AGENT
+
+    %% ---------- 8. OUTPUT ----------
+    subgraph S8["⑧ OUTPUT"]
+        direction LR
+        CLASS["classification<br/>APPLICATION_OR_CLIENT_SIDE<br/>DATABASE_CONFIG_OR_DATA_MODEL<br/>HOST_OR_RUNTIME<br/>AZURE_SERVICE_INCIDENT<br/>INSUFFICIENT_EVIDENCE"]
+        REPORT["incident report<br/>evidence · RCA<br/>solution · support case?"]
+        CLASS --> REPORT
+    end
+
+    CLS --> CLASS
+    AGENT --> CLASS
+
+    %% ---------- 9. GATE ----------
+    GATE{"⑨ approval gate<br/><i>mode: review</i><br/>nothing runs unattended"}
+    REPORT --> GATE
+
+    RESET["/api/chaos/reset<br/>clears toggles<br/>restores VPN key"]
+    VERIFY["/api/sre-agent/verify-recovery<br/><i>asserts on telemetry,</i><br/><i>not on toggle state</i>"]
+    STOP["no action taken"]
+    HEALTHY(["healthy<br/>p99&lt;200ms · 429=0<br/>CPU&lt;70% · loss=0%"])
+
+    GATE -->|"APPROVE"| RESET
+    GATE -->|"REJECT"| STOP
+    RESET --> VERIFY
+    VERIFY -->|"criteria met"| HEALTHY
+    VERIFY -->|"criteria unmet"| AGENT
+
+    %% ---------- STYLING ----------
+    classDef trig  fill:#fff4e6,stroke:#d9822b,stroke-width:2px
+    classDef real  fill:#ffe6e6,stroke:#c92a2a,stroke-width:2px
+    classDef infra fill:#e7f5ff,stroke:#1971c2,stroke-width:2px
+    classDef tel   fill:#f3f0ff,stroke:#6741d9,stroke-width:2px
+    classDef hub   fill:#d0bfff,stroke:#5f3dc4,stroke-width:3px
+    classDef agent fill:#e6fcf5,stroke:#0ca678,stroke-width:2px
+    classDef gate  fill:#fff9db,stroke:#f08c00,stroke-width:3px
+    classDef good  fill:#d3f9d8,stroke:#2f9e44,stroke-width:2px
+
+    class OPS,CHAOS,LOAD trig
+    class BURN,THROTTLE,SLOWSQL,VPNKEY,PAD real
+    class API,WEB,COSMOS,COSMOSTH,SQLDB,VPNGW infra
+    class APPM,APPD,PERF,KEV,AZDIAG,RULES,AG tel
+    class LAW hub
+    class AGENT,CLS,CLASS,REPORT agent
+    class GATE gate
+    class HEALTHY good
