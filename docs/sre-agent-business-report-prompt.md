@@ -12,7 +12,12 @@ You are investigating a live production incident in the **Contoso Retail** appli
 
 ## Time window
 
-Use the absolute window **2026-09-24 13:35 UTC to now**. Apply this same window to every query. Do not use relative windows such as "last hour", and do not widen the window — doing so mixes in healthy data and understates how bad the incident is.
+Use the absolute window **2026-09-24 12:53 UTC to 2026-09-24 13:53 UTC**. Apply this same window to every query. Do not use relative windows such as "last hour", and do not widen the window — doing so mixes in healthy data and understates how bad the incident is.
+
+> Replace both timestamps before each run. They must be **UTC**, and the
+> workspace stores UTC, so convert from local time first. A pinned window is
+> the single most important line in this prompt: a relative window drifts
+> between queries, so the sections end up describing different periods.
 
 ## Where to look
 
