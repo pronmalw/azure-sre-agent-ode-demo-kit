@@ -1,0 +1,44 @@
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Segoe UI, Arial','fontSize':'15px','lineColor':'#5A5A5A'},'flowchart':{'wrappingWidth':400}}}%%
+flowchart LR
+
+    B["<b>1 · Browser</b><br/><font color='#555'>The customer<br/>opens the shop</font>"]
+
+    LB["<b>2 · Azure Load Balancer</b><br/><font color='#555'>Public IP<br/>48.207.241.23</font>"]
+
+    subgraph AKS["3 · AKS CLUSTER &nbsp;(aks-contoso-sreagent-demo)"]
+        direction TB
+        WEB["<b>Web pod</b> &nbsp;<font color='#555'>x2</font><br/><font color='#555'>nginx + React.<br/>Serves the pages, and forwards<br/>anything starting /api/</font>"]
+        API["<b>API pod</b> &nbsp;<font color='#555'>x1</font><br/><font color='#555'>Node.js. Does the real work:<br/>search, basket, checkout</font>"]
+        WEB -->|"/api/ →  port 3001"| API
+    end
+
+    COS["<b>4a · Cosmos DB</b><br/><font color='#555'>Catalogue, baskets, reviews</font>"]
+    COST["<b>4b · Cosmos DB</b><br/><font color='#555'>(throttle test account)</font>"]
+    SQL["<b>4c · Azure SQL</b><br/><font color='#555'>Prices, customers, orders</font>"]
+
+    VPN["<b>VPN Gateway</b><br/><font color='#555'>The link to the corporate network</font>"]
+    NOTE["<b>Note: the VPN is NOT<br/>in the request path.</b><br/><br/><font color='#555'>No customer request travels<br/>through it. The API checks and<br/>breaks its health using the<br/>Azure management API.</font>"]
+
+    B -->|"HTTP"| LB
+    LB --> WEB
+    API -->|"HTTPS"| COS
+    API -->|"HTTPS"| COST
+    API -->|"TCP 1433"| SQL
+    API -.->|"checks health via<br/>Azure management API"| VPN
+    VPN -.- NOTE
+
+    classDef user fill:#EAF2FB,stroke:#2B6CB0,stroke-width:2px,color:#1A202C,rx:8,ry:8
+    classDef net fill:#E6F0FA,stroke:#2C5282,stroke-width:2px,color:#1A202C,rx:8,ry:8
+    classDef pod fill:#E8F0FE,stroke:#3182CE,stroke-width:2px,color:#1A202C,rx:8,ry:8
+    classDef store fill:#FFF8E7,stroke:#B7791F,stroke-width:2px,color:#1A202C,rx:8,ry:8
+    classDef vpn fill:#F5F5F5,stroke:#718096,stroke-width:2px,stroke-dasharray:5 3,color:#1A202C,rx:8,ry:8
+    classDef note fill:#FFFCF0,stroke:#C05621,stroke-width:2px,color:#1A202C,rx:8,ry:8
+
+    class B user
+    class LB net
+    class WEB,API pod
+    class COS,COST,SQL store
+    class VPN vpn
+    class NOTE note
+
+    style AKS fill:#FAFCFF,stroke:#90CDF4,stroke-width:2px,color:#2B6CB0
