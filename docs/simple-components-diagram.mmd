@@ -1,0 +1,63 @@
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Segoe UI, Arial','fontSize':'15px','lineColor':'#5A5A5A'},'flowchart':{'wrappingWidth':400}}}%%
+flowchart LR
+
+    CUST["<b>Customers</b><br/><font color='#555'>Using the shop<br/>in a web browser</font>"]
+
+    subgraph SHOP["THE ONLINE SHOP"]
+        direction TB
+        WEB["<b>The shop front</b><br/><font color='#555'>The pages customers<br/>see and click on</font>"]
+        API["<b>The engine room</b><br/><font color='#555'>Does the actual work:<br/>searches, baskets, checkout</font>"]
+        WEB --> API
+    end
+
+    subgraph DATA["WHERE THE INFORMATION LIVES"]
+        direction TB
+        CAT["<b>Product catalogue<br/>and baskets</b>"]
+        SQL["<b>Prices, customers<br/>and orders</b>"]
+        NET["<b>Private link to the<br/>company network</b>"]
+    end
+
+    REC["<b>The black box recorder</b><br/><font color='#555'>Everything is measured,<br/>continuously:<br/><br/>How fast each page is<br/>Every single error<br/>How hard the system is working<br/>Network health</font>"]
+
+    ALARM["<b>The alarm system</b><br/><font color='#555'>Raises an alert the<br/>moment something<br/>crosses a safe limit</font>"]
+
+    AGENT["<b>The Azure SRE Agent</b><br/><font color='#555'>The AI investigator.<br/><br/>Reads the recorded evidence,<br/>finds the real cause,<br/>writes the report.</font>"]
+
+    HUMAN["<b>You</b><br/><font color='#555'>Read the findings.<br/>Approve or reject<br/>the fix.</font>"]
+
+    PANEL["<b>Demo control panel</b><br/><font color='#555'>Lets us break things on<br/>purpose, safely, to show<br/>the agent working</font>"]
+
+    CUST --> WEB
+    API --> CAT
+    API --> SQL
+    API --> NET
+
+    SHOP -.->|"reports in"| REC
+    DATA -.->|"reports in"| REC
+
+    REC --> ALARM
+    ALARM --> AGENT
+    REC -->|"reads the evidence"| AGENT
+    AGENT --> HUMAN
+    PANEL -.->|"triggers a fault"| API
+
+    classDef cust fill:#EAF2FB,stroke:#2B6CB0,stroke-width:2px,color:#1A202C,rx:8,ry:8
+    classDef app fill:#E8F0FE,stroke:#3182CE,stroke-width:2px,color:#1A202C,rx:8,ry:8
+    classDef store fill:#FFF8E7,stroke:#B7791F,stroke-width:2px,color:#1A202C,rx:8,ry:8
+    classDef watch fill:#F0F0F5,stroke:#4A5568,stroke-width:2px,color:#1A202C,rx:8,ry:8
+    classDef alarm fill:#FDECEC,stroke:#C53030,stroke-width:2px,color:#1A202C,rx:8,ry:8
+    classDef agent fill:#EAF7EE,stroke:#2F855A,stroke-width:3px,color:#1A202C,rx:8,ry:8
+    classDef human fill:#F3EAFB,stroke:#6B46C1,stroke-width:3px,color:#1A202C,rx:8,ry:8
+    classDef panel fill:#FFFFFF,stroke:#718096,stroke-width:2px,stroke-dasharray:4 3,color:#1A202C,rx:8,ry:8
+
+    class CUST cust
+    class WEB,API app
+    class CAT,SQL,NET store
+    class REC watch
+    class ALARM alarm
+    class AGENT agent
+    class HUMAN human
+    class PANEL panel
+
+    style SHOP fill:#FAFCFF,stroke:#90CDF4,stroke-width:2px,color:#2B6CB0
+    style DATA fill:#FFFDF7,stroke:#F6E05E,stroke-width:2px,color:#975A16

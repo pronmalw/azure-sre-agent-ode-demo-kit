@@ -1,0 +1,36 @@
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Segoe UI, Arial','fontSize':'17px','lineColor':'#5A5A5A'},'flowchart':{'wrappingWidth':400}}}%%
+flowchart LR
+
+    S1["<b>1 · Something breaks</b><br/><br/><font color='#555'>Customers are shopping as<br/>normal, then pages slow<br/>right down and checkout<br/>starts to fail.</font>"]
+
+    S2["<b>2 · Azure already knew</b><br/><br/><font color='#555'>Speed, errors, capacity and<br/>network health are measured<br/>continuously.<br/><br/>An alarm raises itself —<br/>nobody had to spot it first.</font>"]
+
+    S3["<b>3 · The AI agent<br/>investigates</b><br/><br/><font color='#555'>The Azure SRE Agent reads<br/>the recorded evidence and<br/>works out the real cause.<br/><br/><b>Minutes, not hours.</b></font>"]
+
+    S4{"<b>4 · Whose<br/>problem<br/>is it?</b>"}
+
+    S5A["<b>Our own application</b><br/><br/><font color='#555'>The agent shows exactly<br/>what to change.<br/><b>No support case needed.</b></font>"]
+
+    S5B["<b>A genuine Azure fault</b><br/><br/><font color='#555'>Raise a support case — with<br/>all the evidence already<br/>gathered for you.</font>"]
+
+    S6["<b>5 · A person decides,<br/>then it's fixed</b><br/><br/><font color='#555'>The agent never changes<br/>anything on its own.<br/>It recommends; you approve.<br/><br/>Recovery is then <b>proven by<br/>measurement</b>, not assumed.</font>"]
+
+    S1 --> S2 --> S3 --> S4
+    S4 -->|"most of the time"| S5A
+    S4 -->|"occasionally"| S5B
+    S5A --> S6
+    S5B --> S6
+    S6 -.->|"monitoring never stops"| S2
+
+    classDef problem fill:#FDECEC,stroke:#C53030,stroke-width:2px,color:#1A202C,rx:10,ry:10
+    classDef normal fill:#EAF2FB,stroke:#2B6CB0,stroke-width:2px,color:#1A202C,rx:10,ry:10
+    classDef agent fill:#EAF7EE,stroke:#2F855A,stroke-width:3px,color:#1A202C,rx:10,ry:10
+    classDef decision fill:#FFF6E0,stroke:#B7791F,stroke-width:2px,color:#1A202C
+    classDef human fill:#F3EAFB,stroke:#6B46C1,stroke-width:3px,color:#1A202C,rx:10,ry:10
+
+    class S1 problem
+    class S2 normal
+    class S3 agent
+    class S4 decision
+    class S5A,S5B normal
+    class S6 human
