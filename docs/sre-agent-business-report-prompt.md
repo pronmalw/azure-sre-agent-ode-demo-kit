@@ -48,6 +48,28 @@ The only application metrics that exist are named `contoso.*`:
 
 Cosmos DB throttling is counted as `AppDependencies | where ResultCode == "429"`.
 
+**CRITICAL — there are TWO Cosmos DB accounts, and throttling only ever happens on the second one:**
+
+| Account | Mode | Can it return 429? |
+|---|---|---|
+| `cosmos-euqicty6gdfys` | Serverless | **No** — serverless cannot throttle this way |
+| `cosmos-throttle-euqicty6gdfys` | Provisioned 400 RU/s | **Yes — all real throttling happens here** |
+
+Do **not** filter on the primary account name. `"cosmos-euqicty6gdfys.documents.azure.com"` is *not*
+a substring of `"cosmos-throttle-euqicty6gdfys.documents.azure.com"`, so a filter like
+`Target has "cosmos-euqicty6gdfys.documents.azure.com"` silently excludes **every throttled call**
+and will make a genuinely throttled system look perfectly healthy. Always use:
+
+```kusto
+AppDependencies
+| where TimeGenerated between (datetime(<START>) .. datetime(<END>))
+| where Target has "documents.azure.com"
+| summarize Total = count(), Throttled = countif(ResultCode == "429") by Target
+```
+
+If the application metric `cosmos429Count` disagrees with your dependency query, **assume your query
+is wrong before you conclude the application metric is wrong** — and check this filter first.
+
 Container CPU is reported in nanocores — divide by 1,000,000,000 to get cores. The API container has a limit of **1 core** and a request of **0.25 cores**.
 
 **If a query returns no rows, say so explicitly. Never estimate, never illustrate, never carry a number over from another window.**

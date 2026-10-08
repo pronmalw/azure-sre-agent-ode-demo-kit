@@ -121,7 +121,15 @@ export interface TelemetrySnapshot {
   latencyP50Ms: number;
   latencyP99Ms: number;
   cosmos429Count: number;
+  /** Total RU consumed across every Cosmos operation in the window. */
   ruUsage: number;
+  /**
+   * Mean RU charge per Cosmos operation in the window. This is the figure that
+   * reveals an inefficient access pattern: a hot partition or cross-partition
+   * query inflates the cost of each individual call, whereas `ruUsage` also
+   * rises simply because more traffic is flowing.
+   */
+  ruPerOperation: number;
   serverSideLatencyMs: number;
   hostCpuPercent: number;
   checkoutSuccessRate: number;

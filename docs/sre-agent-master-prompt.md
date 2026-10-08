@@ -33,7 +33,16 @@ Resource Group: rg-sreagent-ode-demo (West Europe)
 AKS Cluster   : aks-contoso-sreagent-demo, namespace: contoso-retail
 App Insights  : appi-euqicty6gdfys  (InstrumentationKey 91e55584-e782-42a0-8567-3ccdc3a3288f)
 Log Analytics : law-euqicty6gdfys   (WorkspaceId 527754b0-cdd5-467a-9128-4f3a4a173b16)
-Cosmos DB     : cosmos-euqicty6gdfys.documents.azure.com:443
+Cosmos DB     : TWO accounts — you MUST query both:
+                  cosmos-euqicty6gdfys.documents.azure.com:443
+                    (serverless — by design it CANNOT return 429s)
+                  cosmos-throttle-euqicty6gdfys.documents.azure.com:443
+                    (provisioned 400 RU/s — ALL real 429 throttling happens here)
+                WARNING: filtering dependencies on the primary account name alone
+                (e.g. Target has "cosmos-euqicty6gdfys.documents.azure.com") does
+                NOT match the throttle account and will silently report zero
+                throttling. Always filter on Target has "documents.azure.com"
+                and then summarize by Target.
 Azure SQL     : sql-euqicty6gdfys.database.windows.net / contoso-retail-db
 Time Window   : LAST 60 MINUTES ONLY — from now() - 1h to now()
 

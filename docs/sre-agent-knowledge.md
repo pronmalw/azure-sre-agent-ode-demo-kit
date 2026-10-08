@@ -12,7 +12,8 @@
 |---|---|---|
 | AKS Cluster | `aks-contoso-sreagent-demo` | Kubernetes (1.34, 2× Standard_D2s_v3) |
 | Container Registry | `acrcontosoeuqicty6gdfys` | ACR |
-| Cosmos DB | `cosmos-euqicty6gdfys` | NoSQL (serverless, multi-container) |
+| Cosmos DB | `cosmos-euqicty6gdfys` | NoSQL (serverless, multi-container) — **cannot return 429s** |
+| Cosmos DB | `cosmos-throttle-euqicty6gdfys` | NoSQL (provisioned 400 RU/s) — **this is where real 429 throttling occurs** |
 | SQL Server | `sql-euqicty6gdfys` | Azure SQL |
 | SQL Database | `contoso-retail-db` | Azure SQL DB |
 | App Insights | `appi-euqicty6gdfys` | Application Insights |
@@ -22,7 +23,7 @@
 ## Kubernetes Namespace and Pods
 
 - **Namespace:** `contoso-retail`
-- **Deployments:** `contoso-retail-api` (2 replicas), `contoso-retail-web` (2 replicas)
+- **Deployments:** `contoso-retail-api` (**1 replica**, cpu request 250m / limit 1 core — no HPA, so it cannot scale out under load), `contoso-retail-web` (2 replicas)
 - **Services:** `contoso-retail-api` (ClusterIP:3001), `contoso-retail-web-public` (LoadBalancer:80)
 - **Health endpoint:** `GET /health` on port 3001
 

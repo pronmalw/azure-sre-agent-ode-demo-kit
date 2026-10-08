@@ -89,7 +89,8 @@ function Show-Status {
         @{ n = 'p99 latency';      v = $t.latencyP99Ms;              u = 'ms'; bad = { param($x) $x -ge 200 } }
         @{ n = 'p50 latency';      v = $t.latencyP50Ms;              u = 'ms'; bad = { param($x) $x -ge 100 } }
         @{ n = 'Cosmos 429s';      v = $t.cosmos429Count;            u = '';   bad = { param($x) $x -gt 0 } }
-        @{ n = 'RU usage';         v = $t.ruUsage;                   u = 'RU'; bad = { param($x) $x -ge 50 } }
+        @{ n = 'RU usage';         v = $t.ruUsage;                   u = 'RU'; bad = { param($x) $false } }
+        @{ n = 'RU per operation'; v = $t.ruPerOperation;            u = 'RU'; bad = { param($x) $x -ge 5 } }
         @{ n = 'Host CPU';         v = $t.hostCpuPercent;            u = '%';  bad = { param($x) $x -ge 30 } }
         @{ n = 'SQL latency';      v = $t.sqlQueryLatencyMs;         u = 'ms'; bad = { param($x) $x -ge 200 } }
         @{ n = 'SQL errors';       v = $t.sqlErrorCount;             u = '';   bad = { param($x) $x -gt 0 } }

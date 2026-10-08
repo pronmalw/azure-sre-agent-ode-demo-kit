@@ -68,6 +68,7 @@ export const startMetricPublisher = (getSnapshot: () => Record<string, unknown>)
         ['contoso.latencyP50Ms', snapshot.latencyP50Ms],
         ['contoso.cosmos429Count', snapshot.cosmos429Count],
         ['contoso.ruUsage', snapshot.ruUsage],
+        ['contoso.ruPerOperation', snapshot.ruPerOperation],
         ['contoso.hostCpuPercent', snapshot.hostCpuPercent],
         ['contoso.sqlQueryLatencyMs', snapshot.sqlQueryLatencyMs],
         ['contoso.sqlErrorCount', snapshot.sqlErrorCount],

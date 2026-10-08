@@ -66,7 +66,14 @@ sreAgentRouter.post('/verify-recovery', async (_req, res, next) => {
       { criterion: 'Zero Cosmos DB 429 errors in 5-minute validation window', pass: snapshot.cosmos429Count === 0 },
       { criterion: 'Host CPU returns to <30% baseline', pass: snapshot.hostCpuPercent < 30 },
       { criterion: 'CosmosClient singleton verified — one instance at application startup', pass: !getChaosService().getState().multipleClients },
-      { criterion: 'Query RU per operation <50 RU/s', pass: snapshot.ruUsage < 50 },
+      {
+        // Measured on this workload: healthy sits at 2.6 RU per operation and
+        // the access-pattern toggles push it to 7.1-7.5, so 5 separates the two
+        // with margin on both sides. The original 50 RU bound was never reached
+        // by this application and so never detected anything.
+        criterion: 'Query RU per operation returns to <5 RU (healthy baseline ≈2.6 RU)',
+        pass: snapshot.ruPerOperation < 5,
+      },
       { criterion: 'Unindexed query RU improves after indexing policy restored', pass: !getChaosService().getState().missingIndexing },
       { criterion: 'Checkout order write succeeds in Azure SQL in <200ms', pass: snapshot.sqlQueryLatencyMs < 200 },
       { criterion: 'SQL query latency returns to <100ms', pass: snapshot.sqlQueryLatencyMs < 100 },

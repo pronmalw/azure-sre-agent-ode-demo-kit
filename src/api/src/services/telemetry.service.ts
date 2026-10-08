@@ -133,11 +133,17 @@ export class TelemetryService {
     const serverSideLatencyMs =
       serviceLatencySamples.length > 0 ? measuredServerSideLatency : likelyAzureServiceIssue ? 650 : 12;
 
+    const totalRu = cosmosOps.reduce((sum, record) => sum + (record.ruCharge ?? 0), 0);
+    // Only operations that actually reported an RU charge count towards the
+    // per-operation mean; otherwise cache hits and throttled calls dilute it.
+    const ruChargedOps = cosmosOps.filter((record) => (record.ruCharge ?? 0) > 0).length;
+
     return {
       latencyP50Ms: percentile(latencies, 50),
       latencyP99Ms: percentile(latencies, 99),
       cosmos429Count: cosmosOps.filter((record) => record.statusCode === 429).length,
-      ruUsage: Math.round(cosmosOps.reduce((sum, record) => sum + (record.ruCharge ?? 0), 0) * 100) / 100,
+      ruUsage: Math.round(totalRu * 100) / 100,
+      ruPerOperation: ruChargedOps === 0 ? 0 : Math.round((totalRu / ruChargedOps) * 100) / 100,
       serverSideLatencyMs,
       hostCpuPercent,
       checkoutSuccessRate:

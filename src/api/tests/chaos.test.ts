@@ -80,4 +80,61 @@ describe('chaos endpoints', () => {
     const opsResponse = await client.get('/api/ops');
     expect(opsResponse.body.activeIncident).toBe(false);
   });
+
+  it('verifies recovery as true on a healthy system that is still serving traffic', async () => {
+    // Recovery is verified while the load generator is still running, so the
+    // checks must tolerate ordinary healthy traffic. The RU check previously
+    // compared total RU for the whole window against a per-operation threshold
+    // of 50, so it failed on a perfectly healthy system under load and reported
+    // "not recovered" at the end of every demo.
+    const client = createTestClient();
+    await client.post('/api/chaos/reset');
+
+    for (let index = 0; index < 200; index += 1) {
+      getTelemetryService().recordOperation({
+        timestamp: new Date().toISOString(),
+        source: 'cosmos',
+        operationType: 'read',
+        latencyMs: 20,
+        ruCharge: 2.8,
+        statusCode: 200,
+      });
+    }
+
+    const snapshot = getTelemetryService().getSnapshot();
+    expect(snapshot.ruUsage).toBeGreaterThan(50);
+    expect(snapshot.ruPerOperation).toBeCloseTo(2.8, 1);
+
+    const verification = await client.post('/api/sre-agent/verify-recovery');
+    expect(verification.body.recovered).toBe(true);
+    const ruCheck = verification.body.checks.find((check: { criterion: string }) =>
+      check.criterion.includes('RU per operation'),
+    );
+    expect(ruCheck.pass).toBe(true);
+  });
+
+  it('fails the RU check when each individual operation is expensive', async () => {
+    const client = createTestClient();
+    await client.post('/api/chaos/reset');
+
+    for (let index = 0; index < 20; index += 1) {
+      getTelemetryService().recordOperation({
+        timestamp: new Date().toISOString(),
+        source: 'cosmos',
+        operationType: 'query',
+        latencyMs: 400,
+        ruCharge: 7.4,
+        statusCode: 200,
+      });
+    }
+
+    expect(getTelemetryService().getSnapshot().ruPerOperation).toBeGreaterThan(5);
+
+    const verification = await client.post('/api/sre-agent/verify-recovery');
+    const ruCheck = verification.body.checks.find((check: { criterion: string }) =>
+      check.criterion.includes('RU per operation'),
+    );
+    expect(ruCheck.pass).toBe(false);
+    expect(verification.body.recovered).toBe(false);
+  });
 });
