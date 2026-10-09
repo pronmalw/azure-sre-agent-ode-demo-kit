@@ -66,6 +66,7 @@ resource cosmos429Alert 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = {
     evaluationFrequency: 'PT5M'
     windowSize: 'PT5M'
     skipQueryValidation: true
+    autoMitigate: true
     scopes: [
       logAnalyticsWorkspaceId
     ]
