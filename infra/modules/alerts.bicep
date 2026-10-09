@@ -1,6 +1,5 @@
 param location string
 param tags object
-param appInsightsId string
 param logAnalyticsWorkspaceId string
 
 resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
@@ -13,38 +12,46 @@ resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
   }
 }
 
-resource latencyAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = {
+// Alerts on the application's own contoso.latencyP99Ms custom metric rather than
+// the standard requests/duration metric. The load generator drives the services
+// in-process rather than over HTTP, so AppRequests is sparse and its average
+// duration never approached the old 2000ms bound — the rule could not fire even
+// while measured p99 reached 14,678ms. Healthy p99 is 60-150ms, so 400ms sits
+// clear of normal variation.
+resource latencyAlert 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = {
   name: 'contoso-p99-latency'
-  location: 'global'
+  location: location
   tags: tags
   properties: {
-    description: 'Alert when p99 latency exceeds 2000ms.'
+    description: 'Detect end-to-end p99 latency above 400ms (healthy baseline 60-150ms).'
     severity: 2
     enabled: true
-    scopes: [
-      appInsightsId
-    ]
     evaluationFrequency: 'PT5M'
     windowSize: 'PT5M'
+    skipQueryValidation: true
+    autoMitigate: true
+    scopes: [
+      logAnalyticsWorkspaceId
+    ]
     criteria: {
-      'odata.type': 'Microsoft.Azure.Monitor.MultipleResourceMultipleMetricCriteria'
       allOf: [
         {
-          name: 'HighLatency'
-          metricNamespace: 'microsoft.insights/components'
-          metricName: 'requests/duration'
+          query: 'AppMetrics | where Name == "contoso.latencyP99Ms" | extend Value = Sum / todouble(ItemCount) | summarize AggregatedValue = max(Value) by bin(TimeGenerated, 5m) | where AggregatedValue > 400'
+          timeAggregation: 'Count'
           operator: 'GreaterThan'
-          threshold: 2000
-          timeAggregation: 'Average'
-          criterionType: 'StaticThresholdCriterion'
+          threshold: 0
+          failingPeriods: {
+            numberOfEvaluationPeriods: 1
+            minFailingPeriodsToAlert: 1
+          }
         }
       ]
     }
-    actions: [
-      {
-        actionGroupId: actionGroup.id
-      }
-    ]
+    actions: {
+      actionGroups: [
+        actionGroup.id
+      ]
+    }
   }
 }
 

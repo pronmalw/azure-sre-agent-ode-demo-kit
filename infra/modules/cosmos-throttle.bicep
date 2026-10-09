@@ -21,6 +21,9 @@ param databaseId string = 'throttle-demo'
 @description('Container deliberately provisioned at the 400 RU/s minimum.')
 param containerId string = 'HotPartition'
 
+@description('Log Analytics workspace that receives this account\'s diagnostics.')
+param logAnalyticsWorkspaceId string
+
 var accountName = toLower('cosmos-throttle-${resourceToken}')
 
 resource account 'Microsoft.DocumentDB/databaseAccounts@2024-02-15-preview' = {
@@ -78,6 +81,30 @@ resource hotPartition 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/contai
       // probe can exhaust it and force Cosmos to return real 429s.
       throughput: 400
     }
+  }
+}
+
+// Without this, the only Cosmos account visible in AzureDiagnostics is the
+// serverless one, which by design never returns 429. An investigation looking
+// at platform logs would therefore see zero throttling while this account was
+// actively throttling, and wrongly conclude the database was healthy.
+resource diagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  name: '${account.name}-diag'
+  scope: account
+  properties: {
+    workspaceId: logAnalyticsWorkspaceId
+    logs: [
+      {
+        categoryGroup: 'allLogs'
+        enabled: true
+      }
+    ]
+    metrics: [
+      {
+        category: 'Requests'
+        enabled: true
+      }
+    ]
   }
 }
 

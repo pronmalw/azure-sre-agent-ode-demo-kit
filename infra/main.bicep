@@ -85,6 +85,7 @@ module cosmosThrottle 'modules/cosmos-throttle.bicep' = if (deployThrottleProbe)
     location: location
     tags: tags
     resourceToken: resourceToken
+    logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
   }
 }
 
@@ -150,7 +151,6 @@ module alerts 'modules/alerts.bicep' = {
   params: {
     location: location
     tags: tags
-    appInsightsId: monitoring.outputs.appInsightsId
     logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
   }
 }
