@@ -1,298 +1,296 @@
 # SRE Agent — Customer-Ready Incident Report Prompt
 
-Paste the block below into the agent chat at:
+A reusable prompt for **https://sre.azure.com/** that produces a figure-heavy, non-technical PDF
+incident report for a customer.
 
-<https://sre.azure.com/agents/subscriptions/d095c6c9-21e9-4fec-bfb0-429d1409e8e0/resourceGroups/rg-sreagent-ode-demo/providers/Microsoft.App/agents/contoso-sre-agent>
+Only the small **SCOPE** block at the top is environment-specific. Everything below it is generic
+and works against any Azure workload. The prompt makes the agent **discover** the topology rather
+than being told it — which is both more reusable and more convincing in a demo, because the
+audience watches the agent work the problem out.
 
-**Before you run it:** trigger the scenario on `/ops` (or `scripts\demo-control.ps1 allon`), let it run for
-**at least 15 minutes** so alerts evaluate and Cosmos diagnostics ingest, then run the prompt while the
-incident is still active. Run it a second time after **Reset to Healthy** if you want the recovery proof
-section populated with real post-fix numbers.
+For this repo's demo environment, use:
 
-If the system is healthy when you run it, the agent will correctly report "no incident" — which is
-accurate but makes a poor demo. Always confirm `activeIncident: true` at
-`http://48.207.241.23/api/ops` first.
+```
+SUBSCRIPTION   : d095c6c9-21e9-4fec-bfb0-429d1409e8e0
+RESOURCE GROUP : rg-sreagent-ode-demo
+```
 
-**Agent permissions are confirmed sufficient** — the user-assigned identity
-`contoso-sre-agent-jb7xjzlhg7v5w` holds Log Analytics Reader, Monitoring Contributor (subscription
-scope, which grants Resource Health reads), DocumentDB Account Contributor, AKS RBAC Reader and
-Application Insights Component Contributor. Every query this prompt asks for will authorise.
+**Before running:** start the scenario (`scripts\demo-control.ps1 allon`), wait **~15 minutes** so
+alerts evaluate and diagnostic logs ingest, and confirm `activeIncident: true` at
+`http://<app-ip>/api/ops`. Running against a healthy system yields a correct but empty report.
 
 ---
 
 ## The prompt
 
 ````text
-You are the Site Reliability Engineer on call for Contoso Retail, an online shop running on Azure.
+You are the Site Reliability Engineer on call for this workload.
 
-Produce ONE customer-ready PDF report. It will be handed directly to a business audience —
-store operations managers and executives — who do not know what Kubernetes, Cosmos DB,
-a request unit or a partition key is. It must also stand up to scrutiny from their engineers.
+Produce ONE customer-ready PDF incident report. It goes directly to a business audience —
+operations managers and executives — who do not know what Kubernetes, a request unit, a
+partition key or a p99 is. It must also survive scrutiny from their engineers.
 
-════════════════════════════════════════════════════════════════════════
-PART 0 — HOW THIS REPORT MUST LOOK (read before you analyse anything)
-════════════════════════════════════════════════════════════════════════
+════════════════════════════════════════════════════════════════════
+SCOPE  (the only thing you are told — discover everything else)
+════════════════════════════════════════════════════════════════════
+
+SUBSCRIPTION   : <subscription id>
+RESOURCE GROUP : <resource group>
+TIME WINDOW    : the last 2 hours
+
+Everything else in this prompt is method, not answers. Do not assume any topology,
+resource name, threshold or cause. Measure it.
+
+════════════════════════════════════════════════════════════════════
+PART 0 — HOW THE REPORT MUST LOOK (read before analysing)
+════════════════════════════════════════════════════════════════════
 
 This prompt is long. The REPORT MUST BE SHORT.
 
-Hard rules:
 • MAXIMUM 8 pages.
 • MINIMUM 7 figures. Figures carry the message; text only labels them.
-• No section of prose may exceed 60 words. Prefer tables and diagrams to paragraphs.
-• No unexplained jargon. First use of any technical term gets a 6-word plain-English gloss
-  in brackets. Example: "throttling (the database refusing extra work to protect itself)".
-• Every number in the report must carry its unit and the time it was measured.
-• Use colour consistently and state the key once: GREEN = healthy, AMBER = degraded,
-  RED = failing, GREY = no data.
-• Write numbers the way a non-technical reader reads them: "7.5 seconds", not "7483ms";
-  "96 out of 100" or "96%", not "0.96 cores of a 1 core limit" (put the technical form in
-  brackets afterwards if it matters).
+• No block of prose over 60 words. Prefer tables and diagrams to paragraphs.
+• No unexplained jargon. First use of any technical term gets a short plain-English
+  gloss in brackets — e.g. "throttling (the database refusing extra work to protect
+  itself)".
+• Every number carries its unit and when it was measured.
+• Consistent colour, key stated once: GREEN healthy, AMBER degraded, RED failing,
+  GREY no data.
+• Write numbers as a non-technical reader reads them: "7.5 seconds" not "7483ms";
+  "95% of its allowance" not "0.95 cores". Put the technical form in brackets if needed.
 
-════════════════════════════════════════════════════════════════════════
-PART 1 — ENVIRONMENT (verified ground truth — use exactly, do not invent)
-════════════════════════════════════════════════════════════════════════
+════════════════════════════════════════════════════════════════════
+PART 1 — DISCOVER THE ENVIRONMENT
+════════════════════════════════════════════════════════════════════
 
-Subscription   : d095c6c9-21e9-4fec-bfb0-429d1409e8e0
-Resource group : rg-sreagent-ode-demo  (West Europe)
+Before diagnosing anything, inventory the resource group and establish the request path.
+Report what you find; never assume a standard shape.
 
-Compute
-  AKS cluster  : aks-contoso-sreagent-demo
-  Namespace    : contoso-retail
-  Workloads    : contoso-retail-api — 1 replica, CPU request 250m, CPU LIMIT 1 core, NO autoscaler
-                 contoso-retail-web — 2 replicas, autoscaler 2-10 at 70% CPU
-  Nodes        : 2 x Standard_D2s_v3 (2 vCPU each)
-  Entry point  : Azure Load Balancer, public IP 48.207.241.23
+D1. List every resource in the group. Identify: the public entry point, the compute tier,
+    every data store, every network component, and the observability stack
+    (Log Analytics workspace, Application Insights).
 
-Data
-  Cosmos DB    : TWO SEPARATE ACCOUNTS. You must look at both.
-                 (a) cosmos-euqicty6gdfys           — SERVERLESS. By design it auto-scales
-                     and CANNOT return 429 throttling. Zero 429s here is normal and
-                     proves nothing.
-                 (b) cosmos-throttle-euqicty6gdfys  — PROVISIONED at 400 RU/s.
-                     ALL genuine throttling happens here.
-  Azure SQL    : sql-euqicty6gdfys / contoso-retail-db
+D2. For EVERY data store, record its CAPACITY MODE and any configured limit — serverless
+    vs provisioned, autoscale ceiling, provisioned throughput, tier, vCore count.
+    This single attribute usually decides the classification in PART 3, because a store
+    can only be throttled against a limit that exists.
 
-Network
-  VNets        : vnet-euqicty6gdfys (main), vnet-onprem-sim-euqicty6gdfys (simulated branch site)
-  VPN gateways : vpngw-main-euqicty6gdfys, vpngw-onprem-euqicty6gdfys
-  Connections  : conn-main-to-onprem-euqicty6gdfys, conn-onprem-to-main-euqicty6gdfys
-  CRITICAL     : Cosmos DB and Azure SQL are reached over PUBLIC service endpoints.
-                 There are NO private endpoints. Customer shopping traffic DOES NOT
-                 travel through the VPN. The VPN carries back-office/branch traffic only.
-                 Do NOT draw or describe shoppers' requests as passing through the VPN.
+D3. Determine the ACTUAL request path end to end. Specifically establish, with evidence,
+    whether data stores are reached over private endpoints or public service endpoints,
+    and whether any VPN or ExpressRoute circuit is in the customer-facing data path or
+    only carries back-office traffic. Never draw a network component into the user's
+    request path without confirming traffic actually traverses it.
 
-Observability
-  App Insights : appi-euqicty6gdfys   (workspace-based)
-  Workspace    : law-euqicty6gdfys    (ID 527754b0-cdd5-467a-9128-4f3a4a173b16)
-  Alert rules  : contoso-p99-latency, contoso-host-cpu-saturation, contoso-cosmos-throttling,
-                 contoso-cosmos-429, contoso-sql-slow-query, contoso-vpn-tunnel-down,
-                 contoso-vpn-packet-loss  → all route to action group ag-sre-demo
+D4. For each compute workload record replica count, autoscaler presence and settings, and
+    CPU/memory requests AND limits. A limit the customer chose is a frequent root cause.
 
-════════════════════════════════════════════════════════════════════════
-PART 2 — HOW TO QUERY (these exact traps have produced wrong reports before)
-════════════════════════════════════════════════════════════════════════
+D5. List the configured alert rules and what each one actually tests.
 
-TIME WINDOW: the LAST 60 MINUTES. State the exact UTC window on the cover page and use
-the identical window for every query. Never mix windows.
+Carry this inventory into FIGURE 1. If anything cannot be determined, say so explicitly.
 
-1. This App Insights instance is WORKSPACE-BASED. The tables `requests`, `traces`,
-   `customMetrics` and `customEvents` DO NOT EXIST. Use:
-   AppRequests, AppDependencies, AppMetrics, AppEvents, AppTraces.
+════════════════════════════════════════════════════════════════════
+PART 2 — QUERY DISCIPLINE (generic traps that invert conclusions)
+════════════════════════════════════════════════════════════════════
 
-2. THE COSMOS TRAP — this one inverted a previous report's conclusion.
-   "cosmos-euqicty6gdfys.documents.azure.com" is NOT a substring of
-   "cosmos-throttle-euqicty6gdfys.documents.azure.com".
-   Filtering on the primary account name SILENTLY EXCLUDES every throttled call and makes
-   a heavily throttled system look perfectly healthy. Always filter broadly, then group:
+TIME WINDOW
+  Use the window given in SCOPE for every query — never mix windows.
+  First, locate the incident start yourself (first alert fired, or the first clear
+  inflection in the metrics). Then split the window at that moment and measure
+  baseline and incident SEPARATELY from real data:
 
-     AppDependencies
-     | where TimeGenerated between (datetime(<START>) .. datetime(<END>))
-     | where Target has "documents.azure.com"
-     | summarize Calls = count(), Throttled = countif(ResultCode == "429") by Target
+    | extend Phase = iff(TimeGenerated < datetime(<incident start>), "Baseline", "Incident")
+    | summarize ... by Phase
 
-   Cross-check against the Azure platform's own logs, which cover both accounts:
+  Never estimate a baseline. If the window contains no healthy period, say so.
 
-     AzureDiagnostics
-     | where TimeGenerated between (datetime(<START>) .. datetime(<END>))
-     | where ResourceProvider == "MICROSOFT.DOCUMENTDB"
-     | summarize Total = count(), Throttled = countif(statusCode_s == "429") by Resource
+Q1. DETERMINE THE TABLE SCHEMA BEFORE QUERYING.
+    Workspace-based Application Insights exposes AppRequests, AppDependencies, AppMetrics,
+    AppEvents, AppTraces. Classic exposes requests, dependencies, customMetrics. Querying
+    the wrong set returns NOTHING rather than an error, which reads as "no problem found".
+    Confirm which tables actually hold rows before drawing any conclusion from emptiness.
 
-3. CPU lives in the `Perf` table, NOT `InsightsMetrics`. You MUST group by container —
-   a cluster-wide average is meaningless because dozens of idle system containers drown
-   the one that matters. Measured proof: grouped by container the API sits at 0.95 cores;
-   averaged across the cluster the same data reads 0.02 cores and looks perfectly healthy.
+Q2. NEVER FILTER A RESOURCE BY NAME FRAGMENT — ENUMERATE AND GROUP.
+    Resource names frequently share prefixes, so a name filter can silently exclude the
+    very resource that is failing while appearing to succeed. Always filter broadly, then
+    group, so every participant appears in the output and zero-rows is visible:
 
-     Perf
-     | where TimeGenerated between (datetime(<START>) .. datetime(<END>))
-     | where ObjectName == "K8SContainer" and CounterName == "cpuUsageNanoCores"
-     | extend Cores = CounterValue / 1000000000.0
-     | summarize AvgCores = avg(Cores), MaxCores = max(Cores) by InstanceName
-     | order by MaxCores desc
+      AppDependencies
+      | where TimeGenerated between (<window>)
+      | summarize Calls = count(), Failures = countif(Success == false),
+                  Throttled = countif(ResultCode == "429") by Target, Type
 
-   Then compare the API container against its OWN limit of 1 core, and separately run
-   ObjectName == "K8SNode" to get node utilisation against 2 vCPU.
-   Always distinguish CONTAINER-AGAINST-ITS-LIMIT from NODE-AGAINST-ITS-CAPACITY.
-   A container at 95% of its own limit on a node that is only 35% busy is a LIMIT
-   problem (the customer capped it too low), NOT a cluster capacity problem. Getting
-   this backwards sends the customer to buy nodes they do not need.
+    Cross-check client-side observations against the platform's own logs, which cover every
+    account regardless of what the client reports:
 
-4. The application publishes its own measurements as `contoso.*` metrics in AppMetrics.
-   Read them as: Value = Sum / todouble(ItemCount). Available:
-     contoso.latencyP50Ms, contoso.latencyP99Ms, contoso.ruUsage, contoso.ruPerOperation,
-     contoso.cosmos429Count, contoso.sqlQueryLatencyMs, contoso.sqlErrorCount,
-     contoso.hostCpuPercent, contoso.checkoutSuccessRate, contoso.vpnTunnelDown,
-     contoso.networkPacketLossPercent, contoso.activeToggleCount
-   Note `contoso.ruUsage` is the TOTAL for the window; `contoso.ruPerOperation` is the
-   average cost of a SINGLE database operation. Only the per-operation figure tells you
-   whether the access pattern is wasteful. Rising total RU may just mean more shoppers.
+      AzureDiagnostics
+      | where TimeGenerated between (<window>)
+      | summarize Total = count(), Throttled = countif(statusCode_s == "429")
+                  by ResourceProvider, Resource
 
-5. AppRequests is SPARSE BY DESIGN (roughly 870/hour). Background traffic is generated
-   in-process and does not create HTTP request records. Low AppRequests volume is NOT
-   evidence of an outage or of low traffic. Dependency calls outnumber requests by
-   roughly 500:1 — that amplification is itself a finding worth showing.
+    If two data stores exist and only one shows throttling, that asymmetry is a FINDING —
+    explain it from their capacity modes (D2), do not average it away.
 
-6. Check the real control-plane state of BOTH VPN connections individually via Azure
-   Resource Manager. A listing call can report an empty status; query each connection.
+Q3. NEVER AGGREGATE CPU ACROSS CONTAINERS OR NODES — GROUP BY INSTANCE.
+    A busy container averaged with idle system containers disappears. Grouping typically
+    reveals one workload pinned at its limit where the cluster-wide mean looks idle.
+    For AKS, CPU is in the Perf table (ObjectName "K8SContainer" / "K8SNode",
+    CounterName "cpuUsageNanoCores"; divide by 1e9 for cores), not InsightsMetrics.
 
-7. If a query returns no rows, SAY SO and mark that figure GREY / "no data".
-   NEVER estimate, illustrate, extrapolate, or carry a number from a different window.
-   Label every figure [MEASURED] (you queried it) or [SELF-REPORTED] (the application
-   told you). Where both exist and disagree, show both and investigate the gap —
-   assume your query is wrong before you assume the application metric is wrong.
+      Perf
+      | where TimeGenerated between (<window>)
+      | where ObjectName == "K8SContainer" and CounterName == "cpuUsageNanoCores"
+      | extend Cores = CounterValue / 1000000000.0
+      | summarize AvgCores = avg(Cores), MaxCores = max(Cores) by InstanceName
+      | order by MaxCores desc
 
-8. If `contoso.sqlErrorCount` is 0, SQL is SLOW, not FAILING. Do not describe failed or
-   dropped orders unless `contoso.checkoutSuccessRate` is actually below 1.
+Q4. SEPARATE "AT ITS OWN LIMIT" FROM "OUT OF CAPACITY".
+    Compare each workload against ITS OWN configured limit, and separately compare the
+    node/host against its physical capacity. A container at 95% of its own limit on a
+    host that is 30% idle is a LIMIT problem — the fix is to raise the limit, not to buy
+    hardware. Reversing these sends the customer to spend money that changes nothing.
 
-════════════════════════════════════════════════════════════════════════
-PART 3 — THE ANALYSIS YOU MUST PERFORM
-════════════════════════════════════════════════════════════════════════
+Q5. SEPARATE TOTALS FROM PER-OPERATION COST.
+    Total consumption (RU, DTU, CPU-seconds, calls) rises naturally with traffic and
+    proves nothing about efficiency. Cost PER OPERATION rising while traffic is flat is
+    what proves the access pattern became wasteful. Always compute and present both, and
+    base any efficiency claim on the per-operation figure.
+
+Q6. UNDERSTAND TRAFFIC SHAPE BEFORE READING MEANING INTO VOLUME.
+    Request-table volume may be low by design — background work, in-process calls, batch
+    jobs and internal traffic often never create request records. Verify the normal ratio
+    of dependency calls to requests in the BASELINE period before treating a quiet table
+    as an outage. A high dependency-to-request ratio is itself a finding worth showing.
+
+Q7. CHECK CONTROL-PLANE STATE PER RESOURCE, NOT FROM LIST CALLS.
+    List operations frequently return empty or stale status fields. Query each connection,
+    gateway or endpoint individually via Azure Resource Manager for its true state.
+
+Q8. DISTINGUISH SLOW FROM FAILING.
+    High latency with a zero error count means degraded, not broken. Do not describe lost
+    orders, failed transactions or dropped requests unless a success-rate or error metric
+    actually shows them. State the success rate you measured.
+
+Q9. EMPTY RESULTS ARE A RESULT.
+    If a query returns no rows, SAY SO and mark that figure GREY / "no data". Never
+    estimate, illustrate, extrapolate or carry a number in from another window.
+    Label every figure [MEASURED] (you queried it) or [SELF-REPORTED] (the application
+    asserted it). Where the two disagree, show both and investigate — assume your query
+    is wrong before assuming the telemetry is wrong.
+
+════════════════════════════════════════════════════════════════════
+PART 3 — THE ANALYSIS
+════════════════════════════════════════════════════════════════════
 
 STEP 1 — DETECT
-  Which alert rules fired, at what UTC time, and in what order?
-  What did a shopper actually experience? Quantify in human terms:
-  page wait in seconds, percentage of baskets affected, orders lost (only if
-  checkoutSuccessRate < 1).
+  Which alerts fired, at what UTC time, in what order? What did a real user experience?
+  Quantify in human terms: seconds of wait, share of sessions affected, transactions lost
+  (only if a success metric actually dropped).
 
 STEP 2 — MEASURE
-  For each signal below, report HEALTHY BASELINE vs DURING INCIDENT, with units:
-  page response time (p50 and p99), database cost per operation, throttled database
-  calls, application CPU against its limit, SQL query time, SQL errors,
-  network packet loss, VPN tunnel state, checkout success rate.
+  Baseline vs incident, with units, for every signal you can evidence: end-to-end response
+  time (p50 and p99), per-operation data-store cost, throttled/failed calls, compute against
+  its limit, query latency, error counts, packet loss, connectivity state, success rate.
 
-STEP 3 — CLASSIFY  ← the central question this report must answer
-  Assign ONE primary classification, plus any contributing factors, each with the
-  specific evidence and a confidence score out of 10.
+STEP 3 — CLASSIFY  ← the central question the report must answer
+  Give ONE primary classification plus contributing factors, each with its specific
+  evidence row and a confidence score out of 10.
 
-  (A) AZURE PLATFORM FAULT — an Azure service failed to do what Microsoft promises.
-      Qualifying evidence: Azure Service Health or Resource Health showing degradation;
-      service-side latency high while client behaviour is unchanged; errors with no
-      corresponding client cause.
-      IMPORTANT AND NON-OBVIOUS: a 429 throttling response after a customer-provisioned
-      limit is exceeded is NOT a platform fault. That is Azure working exactly as
-      designed, protecting the service. Classify it under (B) or (C).
+  (A) AZURE PLATFORM FAULT — an Azure service failed to deliver what Microsoft commits to.
+      Requires: Service Health or Resource Health evidence, or service-side degradation
+      with no corresponding change in client behaviour.
+      CRITICAL AND COUNTER-INTUITIVE: a throttling response (429) raised after a
+      customer-configured limit is exceeded is NOT a platform fault. That is the platform
+      functioning exactly as designed and protecting the service. It belongs in (B) or (C).
+      Likewise a timeout caused by the client asking for too much is not a platform fault.
 
-  (B) APPLICATION / CODE FAULT — the code asks Azure to do unnecessary or wasteful work.
-      Qualifying evidence: cost per database operation rising while traffic is flat;
-      queries scanning every partition instead of one; missing indexes; the same data
-      fetched repeatedly; multiple database client instances where one is correct;
-      oversized documents; CPU burned inside the application.
+  (B) APPLICATION / CODE FAULT — the code makes the platform do unnecessary work.
+      Evidence: per-operation cost rising while traffic is flat; queries scanning broadly
+      instead of seeking; missing or unused indexes; repeated fetches of identical data;
+      connection or client objects created per call instead of pooled; oversized payloads;
+      CPU burned inside the application.
 
-  (C) CUSTOMER CONFIGURATION / CAPACITY — the code is reasonable but the environment is
-      under-provisioned or misconfigured.
-      Qualifying evidence: a resource sitting exactly at a limit the customer chose
-      (e.g. a 400 RU/s ceiling, a 1-core container limit, a single replica with no
-      autoscaler); a credential or key mismatch; a setting drifted from intended state.
+  (C) CUSTOMER CONFIGURATION / CAPACITY — code is reasonable, environment is not.
+      Evidence: a resource pinned exactly at a customer-chosen ceiling; a single replica
+      with no autoscaler; an undersized tier; a credential, key or setting mismatch;
+      drift from intended configuration.
 
-  Present the verdict as a traffic-light table across all three categories, so the reader
-  can see what was RULED OUT and why — not only what was ruled in. Ruling Azure out is
-  as valuable to the customer as finding the cause.
+  Present as a traffic-light table covering ALL THREE, so the reader sees what was RULED
+  OUT and why. Ruling Azure out, with evidence, is as valuable to the customer as finding
+  the cause — and more credible than a report that only accuses.
 
 STEP 4 — ROOT CAUSE
-  Give the causal chain as a diagram, not prose: trigger → mechanism → symptom →
-  business impact. Maximum 5 links. Then state the single sentence a non-technical
-  reader should remember.
+  Causal chain as a diagram, not prose: trigger → mechanism → symptom → business impact.
+  Maximum 5 links. Then one sentence a non-technical reader will remember.
 
 STEP 5 — FIX
-  Recommend specific, actionable fixes. For each: what to change, which of the three
-  categories it addresses, expected effect with a number, effort (Low/Med/High),
-  and whether it is an immediate mitigation or a permanent fix.
-  Separate "stop the bleeding now" from "stop it happening again".
+  For each recommendation: what to change, which category it addresses, expected effect
+  with a number, effort (Low/Med/High), and whether it is immediate mitigation or
+  permanent remedy. Separate "stop the bleeding" from "stop it recurring".
 
 STEP 6 — PROVE RECOVERY
-  If the system has since returned to healthy, show the after numbers against the same
-  baseline and state which checks pass. If the incident is still active, say so plainly
-  and label the section "Not yet verified".
+  If the system has returned to healthy, show the after-numbers against the SAME measured
+  baseline and list which checks pass. If still active, label the section
+  "Not yet verified" and say so plainly.
 
 STEP 7 — VALUE
-  State time-to-detect and time-to-root-cause achieved here, and contrast with the
-  manual alternative: which dashboards, logs and tables a human would have had to
-  correlate by hand, and the specific trap (the two-Cosmos-account filter) that would
-  most likely have sent them to the wrong conclusion.
+  State time-to-detect and time-to-root-cause achieved here. Contrast with the manual
+  alternative: name the specific dashboards, tables and correlations a human would have
+  had to join by hand, and name the specific trap in PART 2 that would most plausibly
+  have led them to the wrong conclusion in this particular incident.
 
-════════════════════════════════════════════════════════════════════════
+════════════════════════════════════════════════════════════════════
 PART 4 — REQUIRED FIGURES (minimum 7)
-════════════════════════════════════════════════════════════════════════
+════════════════════════════════════════════════════════════════════
 
-FIGURE 1 — Architecture, left-to-right, landscape.
-  Shopper → Load Balancer → web pods → API pod → Cosmos DB (both accounts, labelled
-  with their modes) and Azure SQL. Show App Insights / Log Analytics collecting from
-  everything, and the SRE Agent reading from Log Analytics.
-  Draw the VPN and the branch-site VNet OFF to one side, clearly annotated
-  "back-office only — shopper traffic does not pass through here".
-  Colour each component GREEN/AMBER/RED by its measured state in this incident.
+FIG 1  ARCHITECTURE — left-to-right, landscape, built from your PART 1 discovery.
+       User → entry point → compute → data stores, each data store labelled with its
+       capacity mode and limit. Show the observability stack collecting from everything
+       and the SRE Agent reading from it. Draw any component NOT in the user request path
+       off to one side, explicitly annotated as such. Colour every component by its
+       measured state.
+FIG 2  DETECTION TIMELINE — alerts on a time axis in firing order with severity;
+       mark incident start and recovery.
+FIG 3  BEFORE vs DURING — grouped bars per KPI, baseline beside incident, multiple called
+       out ("18x slower"). Plain labels: "Page wait", "Cost per action", "CPU used".
+FIG 4  CLASSIFICATION TRAFFIC LIGHT — rows: Azure platform / Application code / Customer
+       configuration. Columns: Verdict, Evidence, Confidence.
+FIG 5  ROOT CAUSE CHAIN — trigger → mechanism → symptom → business impact.
+FIG 6  FIX PRIORITY — Impact vs Effort quadrant, each fix numbered and colour-coded by
+       category.
+FIG 7  RECOVERY PROOF — same KPIs as FIG 3 plus the after column, and a pass/fail checklist.
+FIG 8  (if evidenced) DEPENDENCY AMPLIFICATION — downstream calls per user request.
 
-FIGURE 2 — Detection timeline. Alerts on a time axis in the order they fired,
-  with severity. Mark "incident begins" and, if applicable, "recovery".
-
-FIGURE 3 — Before vs during, as a bar chart per KPI, baseline alongside incident
-  value, with the multiple called out ("18x slower"). Use plain labels: "Page wait",
-  "Database cost per action", "App CPU used", "Database query time".
-
-FIGURE 4 — Classification traffic-light table. Rows = Azure platform / Application code /
-  Customer configuration. Columns = Verdict, Evidence, Confidence.
-
-FIGURE 5 — Root cause chain. Trigger → mechanism → symptom → business impact.
-
-FIGURE 6 — Fix priority. Two-by-two of Impact against Effort, each fix plotted and
-  numbered, colour-coded by which category it addresses.
-
-FIGURE 7 — Recovery proof. The same KPIs as Figure 3 with the after column, and a
-  pass/fail checklist.
-
-FIGURE 8 (if the data supports it) — The dependency amplification: database calls versus
-  shopper requests, showing how one page view multiplies into many database operations.
-
-════════════════════════════════════════════════════════════════════════
+════════════════════════════════════════════════════════════════════
 PART 5 — REPORT STRUCTURE
-════════════════════════════════════════════════════════════════════════
+════════════════════════════════════════════════════════════════════
 
-Page 1  COVER — Customer name, incident title in plain English, exact UTC window,
-        severity, and THE VERDICT IN ONE SENTENCE naming the category.
-        Add a 4-box summary strip: What happened / Who it affected / Why /
-        Whose responsibility it is.
-Page 2  WHAT THE SHOPPER EXPERIENCED — Figure 3. Minimal words.
-Page 3  THE ARCHITECTURE — Figure 1.
-Page 4  HOW IT WAS DETECTED — Figure 2 + the alert table.
-Page 5  THE VERDICT — Figure 4. The ruled-out reasoning matters as much as the ruled-in.
-Page 6  ROOT CAUSE — Figure 5 + the one-sentence takeaway.
-Page 7  THE FIX — Figure 6 + the fix table.
-Page 8  RECOVERY & VALUE — Figure 7 + time-to-detect vs manual effort.
-APPENDIX (does not count toward the 8 pages) — every KQL query you ran, each with the
-        row count it returned, so an engineer can reproduce the result exactly.
+Page 1  COVER — customer, incident title in plain English, exact UTC window, severity,
+        and THE VERDICT IN ONE SENTENCE naming the category. Add a 4-box strip:
+        What happened / Who it affected / Why / Whose responsibility it is.
+Page 2  WHAT THE USER EXPERIENCED — FIG 3.
+Page 3  THE ARCHITECTURE — FIG 1.
+Page 4  HOW IT WAS DETECTED — FIG 2 + alert table.
+Page 5  THE VERDICT — FIG 4, including the ruled-out reasoning.
+Page 6  ROOT CAUSE — FIG 5 + the one-sentence takeaway.
+Page 7  THE FIX — FIG 6 + fix table.
+Page 8  RECOVERY & VALUE — FIG 7 + time-to-detect vs manual effort.
+APPENDIX (excluded from the page count) — every query you ran with the row count it
+        returned, so an engineer can reproduce each number exactly.
 
-════════════════════════════════════════════════════════════════════════
+════════════════════════════════════════════════════════════════════
 PART 6 — INTEGRITY
-════════════════════════════════════════════════════════════════════════
+════════════════════════════════════════════════════════════════════
 
-This report goes to a paying customer. Accuracy outranks completeness and outranks
-narrative neatness.
+This report goes to a paying customer. Accuracy outranks completeness, and outranks a
+tidy narrative.
 
-• Do not invent a number to complete a figure. An honest gap is acceptable; a plausible
-  invention is not.
-• Do not claim an Azure platform fault without Service Health or Resource Health evidence.
-• Do not claim lost orders without checkoutSuccessRate below 1.
-• Do not route shopper traffic through the VPN in any diagram or sentence.
-• If the evidence is ambiguous, say which single additional measurement would settle it.
+• Never invent a number to complete a figure. An acknowledged gap is acceptable; a
+  plausible fabrication is not.
+• Never claim an Azure platform fault without Service Health or Resource Health evidence.
+• Never claim lost transactions without a success metric that actually dropped.
+• Never place a network component in the user request path without confirming traffic
+  traverses it.
+• If evidence is ambiguous, state the ONE additional measurement that would settle it.
 • Close with: "Prepared by Azure SRE Agent · <UTC timestamp> · all figures measured from
   <workspace> over <window>."
 
@@ -301,35 +299,38 @@ Produce the report as a PDF, ready to send to the customer without editing.
 
 ---
 
-## Why this prompt is shaped the way it is
+## Why each rule exists
 
-| Guard | What it prevents |
+Every rule below was derived from a real failure observed in this environment, then generalised
+so it applies to any workload.
+
+| Rule | The failure it prevents |
 |---|---|
-| Both Cosmos accounts named, with the substring trap spelled out | The exact error that made a previous report conclude "no throttling, not Azure's fault" when thousands of calls were being throttled |
-| `AzureDiagnostics` cross-check | Catches the above even if the agent ignores the warning |
-| Workspace-based table list | `requests` / `customMetrics` silently return nothing |
-| `Perf`, not `InsightsMetrics`, **grouped by container** | Verified live: grouped, the API container reads 0.95 cores (95% of limit); cluster-averaged, the same data reads 0.02 cores and looks healthy |
-| Container-limit vs node-capacity | Stops "the cluster is out of CPU" when one container hit its own 1-core cap — and stops recommending nodes the customer doesn't need |
-| `ruUsage` vs `ruPerOperation` | Total RU rises with traffic; only per-operation cost proves inefficiency |
-| AppRequests is sparse by design | Stops "traffic collapsed" being read into a quiet table |
-| VPN excluded from the data path | Stops a wrong architecture diagram |
-| 429 ≠ platform fault | The single most important classification nuance |
-| `[MEASURED]` vs `[SELF-REPORTED]` | Keeps the application's own claims separable from independent evidence |
+| **D2** capacity mode first | A serverless store *cannot* throttle. Without this, "zero throttling here" gets misread as "no throttling anywhere". |
+| **Q1** confirm schema | Workspace-based App Insights has no `requests`/`customMetrics` table. Wrong schema returns empty, not an error — which reads as "healthy". |
+| **Q2** enumerate, never name-filter | Measured here: one account name was a *prefix* of another, so filtering on the first silently excluded **every** throttled call and inverted the report's conclusion. |
+| **Q3** group by instance | Measured on identical data: grouped, the API container read **0.95 cores (95% of limit)**; cluster-averaged, **0.02 cores** — apparently healthy. |
+| **Q4** limit vs capacity | Prevents recommending more nodes when one container simply had too low a limit. |
+| **Q5** per-operation vs total | Total RU rises with traffic; only per-operation cost proves inefficiency. Measured: 2.61 → 8.5 RU/op at flat traffic. |
+| **Q6** traffic shape | This app generates load in-process, so request volume is sparse by design. Easily misread as an outage. |
+| **Q7** per-resource state | `az network vpn-connection list` returns `connectionStatus: undefined`; only `show` gives truth. |
+| **Q8** slow ≠ failing | SQL latency hit 7.3s with **zero** errors and a 100% success rate. "Lost orders" would have been fabrication. |
+| **Q9** empty is a result | The single largest source of confident, wrong reporting. |
+| **(A)** 429 ≠ platform fault | The most important classification nuance — and the one that decides whether the customer blames Microsoft or fixes their own config. |
 
-## Live validation of this prompt
+## Live validation
 
-Run on a full 11-toggle incident starting **2026-10-09 08:46:12 UTC**. Every signal the prompt
-asks the agent to find was confirmed present and queryable:
+Run against a full 11-fault incident beginning **2026-10-09 08:46:12 UTC**:
 
 | Signal | Result |
 |---|---|
-| Alert rules fired | **7 of 7**, within 8 minutes (CPU 08:49:25 → p99 08:53:55) |
-| Cosmos throttling, throttle account | **2,369 throttled / 46,570** |
-| Cosmos throttling, serverless account | **0 / 1,943** — confirms serverless cannot 429 |
-| API container CPU | **0.95 cores of a 1-core limit** |
-| `contoso.*` metrics in AppMetrics | 12 of 12 names ingesting |
-| RU per operation | 8.53 during incident vs 2.61 healthy |
-| p99 latency | climbed 569 → 1,426 ms as the window filled |
+| Alert rules fired | **7 of 7** within 8 minutes |
+| Throttling, provisioned store | 3,190 throttled / 61,341 |
+| Throttling, serverless store | **0 / 2,566** — confirms serverless cannot 429 |
+| API container CPU | 0.95 of a 1-core limit |
+| Per-operation cost | 8.5 RU/op incident vs **2.61** baseline |
+| p99 latency | 569 → 1,426 ms |
+| SQL | 7,257 ms, **0 errors**, 100% checkout success |
 
-Ingestion lag measured: alerts from ~3 min, Cosmos diagnostics from ~5 min. Waiting 15 minutes
-before running the prompt gives every figure enough data.
+Ingestion lag: alerts from ~3 min, platform diagnostics from ~5 min. Wait 15 minutes before
+running for every figure to have data.
