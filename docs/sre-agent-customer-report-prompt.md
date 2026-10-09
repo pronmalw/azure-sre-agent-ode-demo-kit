@@ -117,12 +117,24 @@ the identical window for every query. Never mix windows.
      | where ResourceProvider == "MICROSOFT.DOCUMENTDB"
      | summarize Total = count(), Throttled = countif(statusCode_s == "429") by Resource
 
-3. CPU lives in the `Perf` table, NOT `InsightsMetrics`:
-     Perf | where ObjectName == "K8SContainer" and CounterName == "cpuUsageNanoCores"
-   Divide by 1,000,000,000 for cores. Repeat with ObjectName == "K8SNode" for node totals.
+3. CPU lives in the `Perf` table, NOT `InsightsMetrics`. You MUST group by container —
+   a cluster-wide average is meaningless because dozens of idle system containers drown
+   the one that matters. Measured proof: grouped by container the API sits at 0.95 cores;
+   averaged across the cluster the same data reads 0.02 cores and looks perfectly healthy.
+
+     Perf
+     | where TimeGenerated between (datetime(<START>) .. datetime(<END>))
+     | where ObjectName == "K8SContainer" and CounterName == "cpuUsageNanoCores"
+     | extend Cores = CounterValue / 1000000000.0
+     | summarize AvgCores = avg(Cores), MaxCores = max(Cores) by InstanceName
+     | order by MaxCores desc
+
+   Then compare the API container against its OWN limit of 1 core, and separately run
+   ObjectName == "K8SNode" to get node utilisation against 2 vCPU.
    Always distinguish CONTAINER-AGAINST-ITS-LIMIT from NODE-AGAINST-ITS-CAPACITY.
-   The API container limit is 1 core; a node has 2 vCPU. A container at 95% of its own
-   limit on a node that is only 35% busy is a LIMIT problem, not a capacity problem.
+   A container at 95% of its own limit on a node that is only 35% busy is a LIMIT
+   problem (the customer capped it too low), NOT a cluster capacity problem. Getting
+   this backwards sends the customer to buy nodes they do not need.
 
 4. The application publishes its own measurements as `contoso.*` metrics in AppMetrics.
    Read them as: Value = Sum / todouble(ItemCount). Available:
@@ -296,10 +308,28 @@ Produce the report as a PDF, ready to send to the customer without editing.
 | Both Cosmos accounts named, with the substring trap spelled out | The exact error that made a previous report conclude "no throttling, not Azure's fault" when thousands of calls were being throttled |
 | `AzureDiagnostics` cross-check | Catches the above even if the agent ignores the warning |
 | Workspace-based table list | `requests` / `customMetrics` silently return nothing |
-| `Perf`, not `InsightsMetrics` | CPU would come back empty |
-| Container-limit vs node-capacity | Stops "the cluster is out of CPU" when one container hit its own 1-core cap |
+| `Perf`, not `InsightsMetrics`, **grouped by container** | Verified live: grouped, the API container reads 0.95 cores (95% of limit); cluster-averaged, the same data reads 0.02 cores and looks healthy |
+| Container-limit vs node-capacity | Stops "the cluster is out of CPU" when one container hit its own 1-core cap — and stops recommending nodes the customer doesn't need |
 | `ruUsage` vs `ruPerOperation` | Total RU rises with traffic; only per-operation cost proves inefficiency |
 | AppRequests is sparse by design | Stops "traffic collapsed" being read into a quiet table |
 | VPN excluded from the data path | Stops a wrong architecture diagram |
 | 429 ≠ platform fault | The single most important classification nuance |
 | `[MEASURED]` vs `[SELF-REPORTED]` | Keeps the application's own claims separable from independent evidence |
+
+## Live validation of this prompt
+
+Run on a full 11-toggle incident starting **2026-10-09 08:46:12 UTC**. Every signal the prompt
+asks the agent to find was confirmed present and queryable:
+
+| Signal | Result |
+|---|---|
+| Alert rules fired | **7 of 7**, within 8 minutes (CPU 08:49:25 → p99 08:53:55) |
+| Cosmos throttling, throttle account | **2,369 throttled / 46,570** |
+| Cosmos throttling, serverless account | **0 / 1,943** — confirms serverless cannot 429 |
+| API container CPU | **0.95 cores of a 1-core limit** |
+| `contoso.*` metrics in AppMetrics | 12 of 12 names ingesting |
+| RU per operation | 8.53 during incident vs 2.61 healthy |
+| p99 latency | climbed 569 → 1,426 ms as the window filled |
+
+Ingestion lag measured: alerts from ~3 min, Cosmos diagnostics from ~5 min. Waiting 15 minutes
+before running the prompt gives every figure enough data.
